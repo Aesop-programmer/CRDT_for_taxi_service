@@ -9,7 +9,7 @@ edition = "2021"
 clap = { version = "4.5.4", features = ["derive"] }
 futures = "0.3.30"
 inquire = "0.7.4"
-# r2r = "0.8.4"
+r2r = "0.8.4"
 serde = "1.0.197"
 serde_json = "1.0.115"
 time = "0.3.34"

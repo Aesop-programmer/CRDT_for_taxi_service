@@ -1,6 +1,6 @@
 use clap::Parser;
 use futures::{self, FutureExt};
-use std::{path::PathBuf, sync::Arc};
+use std::{path::PathBuf, sync::Arc, time::Duration};
 use taxi_task::{InfoTable, RequireTask};
 use tokio::sync::Mutex;
 use zenoh::prelude::r#async::*;
@@ -20,8 +20,8 @@ async fn main() -> Result<(), Error> {
     let opts = Args::parse();
 
     // ROS
-    // let ctx = r2r::Context::create()?;
-    // let mut node = r2r::Node::create(ctx, "car", "")?;
+    let ctx = r2r::Context::create()?;
+    let mut node = r2r::Node::create(ctx, "car", "")?;
 
     // Zenoh init
     let session = {
@@ -46,11 +46,9 @@ async fn main() -> Result<(), Error> {
     }
 
     let spin_task = spawn_blocking!(move || -> Result<(), Error> {
-        // loop {
-        //     node.spin_once(Duration::from_micros(5));
-        // }
-
-        Ok(())
+        loop {
+            node.spin_once(Duration::from_micros(5));
+        }
     });
 
     // TODO: Implement commanding to Autoware.
