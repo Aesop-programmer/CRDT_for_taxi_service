@@ -1,12 +1,31 @@
+use clap::Parser;
 use inquire::Text;
+use std::path::PathBuf;
 use taxi_task::{CallTaxi, LatLon};
 use zenoh::prelude::r#async::*;
 
 type Error = Box<dyn std::error::Error + Sync + Send>;
 
+/// The interactive shell that assigns passenger tasks.
+#[derive(Debug, Parser)]
+struct Args {
+    /// Zenoh configuration file.
+    #[clap(long)]
+    pub config: Option<PathBuf>,
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Error> {
-    let session = zenoh::open(Config::default()).res().await?;
+    let opts = Args::parse();
+
+    // Zenoh init
+    let session = {
+        let config = match opts.config {
+            Some(config_file) => Config::from_file(config_file)?,
+            None => Config::default(),
+        };
+        zenoh::open(config).res().await?.into_arc()
+    };
     let publisher = session.declare_publisher("rsu/calling_taxi").res().await?;
 
     // Start a task loop. One task ID per iteration.

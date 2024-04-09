@@ -38,7 +38,7 @@ pub struct RequireTask {
 }
 
 impl VehicleState {
-    fn new(car_id: u32) -> Self {
+    pub fn new(car_id: u32) -> Self {
         VehicleState {
             car_id,
             busy: false,

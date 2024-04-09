@@ -1,18 +1,36 @@
+use clap::Parser;
 use futures::{self, FutureExt};
-use std::sync::Arc;
+use std::{path::PathBuf, sync::Arc};
 use taxi_task::{InfoTable, RequireTask};
 use tokio::sync::Mutex;
 use zenoh::prelude::r#async::*;
+
 type Error = Box<dyn std::error::Error + Sync + Send>;
+
+/// The vehicle node that demonstrates taxi task assignment algorithm.
+#[derive(Debug, Parser)]
+struct Args {
+    /// Zenoh configuration file.
+    #[clap(long)]
+    pub config: Option<PathBuf>,
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
+    let opts = Args::parse();
+
     // ROS
     // let ctx = r2r::Context::create()?;
     // let mut node = r2r::Node::create(ctx, "car", "")?;
 
     // Zenoh init
-    let session = zenoh::open(Config::default()).res().await?.into_arc();
+    let session = {
+        let config = match opts.config {
+            Some(config_file) => Config::from_file(config_file)?,
+            None => Config::default(),
+        };
+        zenoh::open(config).res().await?.into_arc()
+    };
 
     let info_table = Arc::new(Mutex::new(InfoTable::new()));
 
