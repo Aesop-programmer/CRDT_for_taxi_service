@@ -1,7 +1,5 @@
-use r2r::uuid::timestamp;
 use serde::{Deserialize, Serialize};
-use std::time::{Duration, Instant};
-use time::convert::Second;
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VehicleState {
@@ -13,7 +11,7 @@ pub struct VehicleState {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InfoTable {
     // pub vehicle_state: Vec<VehicleState>, // current exist car
-    pub task: Vec<Task>, // current task
+    pub task: HashMap<u32, Task>, // current task
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -21,8 +19,8 @@ pub struct Task {
     pub task_id: u32,
     pub cur_location: u32, // todo fill in location
     pub des_location: u32, // todo fill in location
-    pub timestamp: u64,
-    pub assigned_car: u32, // 0 indicates no car is assigned
+    pub timestamp: Option<u64>,
+    pub assigned_car: Option<u32>, // 0 indicates no car is assigned
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -50,41 +48,35 @@ impl VehicleState {
 
 impl InfoTable {
     pub fn new() -> Self {
-        Self { task: Vec::new() }
+        Self {
+            task: HashMap::new(),
+        }
     }
 
     // used for RSU to recevie taxi call
     pub fn called_taxi(&mut self, request: CallTaxi) {
-        let mut assigned_car = 0;
-        let mut timestamp = 0;
-        for i in 0..self.task.len() {
-            if self.task[i].task_id == request.task_id {
-                return;
-            }
-        }
-        self.task.push(Task {
+        self.task.entry(request.task_id).or_insert_with(|| Task {
             task_id: request.task_id,
             cur_location: request.cur_location,
             des_location: request.des_location,
-            timestamp,
-            assigned_car,
+            timestamp: None,
+            assigned_car: None,
         });
     }
 
     pub fn merge_task(&mut self, task: RequireTask) {
-        for i in 0..self.task.len() {
-            if self.task[i].task_id == task.task_id {
-                if self.task[i].assigned_car == 0 {
-                    self.task[i].assigned_car = task.car_id;
-                    self.task[i].timestamp = task.timestamp;
-                } else {
-                    if self.task[i].timestamp > task.timestamp {
-                        self.task[i].assigned_car = task.car_id;
-                        self.task[i].timestamp = task.timestamp;
-                    }
-                }
+        let Some(my_task) = self.task.get_mut(&task.task_id) else {
+            todo!();
+        };
+
+        if my_task.assigned_car.is_none() {
+            my_task.assigned_car = Some(task.car_id);
+            my_task.timestamp = Some(task.timestamp);
+        } else if let Some(timestamp) = my_task.timestamp {
+            if timestamp > task.timestamp {
+                my_task.assigned_car = Some(task.car_id);
+                my_task.timestamp = Some(task.timestamp);
             }
-            break;
         }
     }
 }
