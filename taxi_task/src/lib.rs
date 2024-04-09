@@ -17,8 +17,8 @@ pub struct InfoTable {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Task {
     pub task_id: u32,
-    pub cur_location: u32, // todo fill in location
-    pub des_location: u32, // todo fill in location
+    pub cur_location: LatLon, // todo fill in location
+    pub des_location: LatLon, // todo fill in location
     pub timestamp: Option<u64>,
     pub assigned_car: Option<u32>, // 0 indicates no car is assigned
 }
@@ -26,9 +26,10 @@ pub struct Task {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CallTaxi {
     pub task_id: u32,
-    pub cur_location: u32, // todo fill in location
-    pub des_location: u32, // todo fill in location
+    pub cur_location: LatLon, // todo fill in location
+    pub des_location: LatLon, // todo fill in location
 }
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RequireTask {
     pub task_id: u32,
@@ -79,4 +80,10 @@ impl InfoTable {
             }
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct LatLon {
+    pub lon: f32,
+    pub lat: f32,
 }

@@ -8,8 +8,8 @@ type Error = Box<dyn std::error::Error + Sync + Send>;
 #[tokio::main]
 async fn main() -> Result<(), Error> {
     // ROS
-    let ctx = r2r::Context::create()?;
-    let mut node = r2r::Node::create(ctx, "rsu", "")?;
+    // let ctx = r2r::Context::create()?;
+    // let mut node = r2r::Node::create(ctx, "rsu", "")?;
 
     // Zenoh init
     let session = zenoh::open(Config::default()).res().await?.into_arc();
@@ -28,9 +28,11 @@ async fn main() -> Result<(), Error> {
     }
 
     let spin_task = spawn_blocking!(move || -> Result<(), Error> {
-        loop {
-            node.spin_once(Duration::from_micros(5));
-        }
+        // loop {
+        //     node.spin_once(Duration::from_micros(5));
+        // }
+
+        Ok(())
     });
     println!("RSU is running");
     futures::try_join!(
