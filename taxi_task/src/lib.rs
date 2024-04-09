@@ -1,7 +1,6 @@
 
 use std::time::{Duration, Instant};
 use r2r::uuid::timestamp;
-use serde::de;
 use time::convert::Second;
 use serde::{Deserialize, Serialize};
 
@@ -13,7 +12,7 @@ pub struct VehicleState {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InfoTable{
-    pub vehicle_state: Vec<VehicleState>, // current exist car
+    // pub vehicle_state: Vec<VehicleState>, // current exist car
     pub task: Vec<Task>, // current task
 }
 
@@ -51,20 +50,11 @@ impl VehicleState {
 impl InfoTable{
     pub fn new() -> Self {
         Self {
-            vehicle_state: Vec::new(),
             task: Vec::new(),
         }
     }
 
-    pub fn add_vehicle(&mut self, car_id: u32, busy: bool) {
-        for i in 0..self.vehicle_state.len() {
-            if self.vehicle_state[i].car_id == car_id {
-                return
-            }
-        }
-        self.vehicle_state.push(VehicleState::new(car_id, busy));
-    }
-
+    // used for RSU to recevie taxi call
     pub fn called_taxi(&mut self, request: CallTaxi) {
         let mut assigned_car = 0;
         let mut timestamp = 0;
