@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 pub struct VehicleState {
     pub car_id: u32,
     pub busy: bool,
+    pub assigned_task: u32, // 0 indicates no task is assigned
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -39,10 +40,11 @@ pub struct RequireTask {
 }
 
 impl VehicleState {
-    fn new(car_id: u32, busy: bool) -> Self {
+    fn new(car_id: u32) -> Self {
         VehicleState {
             car_id,
-            busy,
+            busy : false,
+            assigned_task: 0,
         }
     }
 }

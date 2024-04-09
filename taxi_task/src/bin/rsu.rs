@@ -37,7 +37,7 @@ async fn main() -> Result<(),Error> {
     println!("RSU is running");
     futures::try_join!(
         spawn!(deal_taxi_call(info_table.clone(), session.clone())),
-        //spawn!(merge_task(info_table.clone(), session.clone())),
+        spawn!(merge_task(info_table.clone(), session.clone())),
         spin_task,
     )?;
 
@@ -71,8 +71,12 @@ async fn deal_taxi_call(info_table: Arc<Mutex<InfoTable>> , session: Arc<Session
 }
 
 async fn merge_task(info_table: Arc<Mutex<InfoTable>>, session: Arc<Session>) -> Result<(),Error> {
-    let subscriber = session.declare_subscriber("/tasktable").res().await?;
-    loop{
-
+    let subscriber = session.declare_subscriber("task_request").res().await?;
+    while let Ok(sample) = subscriber.recv_async().await{
+        let value = sample.value.try_into()?;
+        let require_task: RequireTask = serde_json::from_value(value)?;
+        let mut guard = info_table.lock().await;
+        guard.merge_task(require_task);
     }
+    Ok(())
 }
