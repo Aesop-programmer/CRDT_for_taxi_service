@@ -1,17 +1,23 @@
-use std::{time::{Duration,Instant}, str::SplitWhitespace, sync::Arc};
-use futures;
+use futures::{self, stream::StreamExt, FutureExt, Stream};
 use serde::de::value;
-use taxi_task::{InfoTable,CallTaxi,RequireTask,Task};
-use zenoh::{prelude::r#async::{*, self}, info};
+use std::{
+    str::SplitWhitespace,
+    sync::Arc,
+    time::{Duration, Instant},
+};
+use taxi_task::{CallTaxi, InfoTable, RequireTask, Task};
 use tokio::sync::Mutex;
-use futures::{stream::StreamExt, FutureExt, Stream};
-type Error = Box<dyn std::error::Error +Sync + Send>;
+use zenoh::{
+    info,
+    prelude::r#async::{self, *},
+};
+type Error = Box<dyn std::error::Error + Sync + Send>;
 #[tokio::main]
-async fn main() -> Result<(),Error> { 
+async fn main() -> Result<(), Error> {
     let session = zenoh::open(Config::default()).res().await?.into_arc();
     let publisher = session.declare_publisher("rsu/calling_taxi").res().await?;
-    
-    let call_taxi = CallTaxi{
+
+    let call_taxi = CallTaxi {
         task_id: 1,
         cur_location: 1,
         des_location: 2,

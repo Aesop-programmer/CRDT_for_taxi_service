@@ -1,14 +1,19 @@
-use std::{time::{Duration,Instant}, str::SplitWhitespace, sync::Arc};
-use futures;
-use taxi_task::{InfoTable,CallTaxi,RequireTask,Task};
-use zenoh::{prelude::r#async::{*, self}, info};
+use futures::{self, stream::StreamExt, FutureExt, Stream};
+use std::{
+    str::SplitWhitespace,
+    sync::Arc,
+    time::{Duration, Instant},
+};
+use taxi_task::{CallTaxi, InfoTable, RequireTask, Task};
 use tokio::sync::Mutex;
-use futures::{stream::StreamExt, FutureExt, Stream};
-type Error = Box<dyn std::error::Error +Sync + Send>;
+use zenoh::{
+    info,
+    prelude::r#async::{self, *},
+};
+type Error = Box<dyn std::error::Error + Sync + Send>;
 
 #[tokio::main]
-async fn main() -> Result<(),Error> {
-
+async fn main() -> Result<(), Error> {
     // ROS
     let ctx = r2r::Context::create()?;
     let mut node = r2r::Node::create(ctx, "rsu", "")?;
@@ -17,7 +22,7 @@ async fn main() -> Result<(),Error> {
 
     let info_table = InfoTable::new();
     let info_table = Arc::new(Mutex::new(info_table));
-    
+
     macro_rules! spawn {
         ($fut:expr) => {{
             tokio::spawn($fut).map(|result| -> Result<_, Error> { result? })
@@ -43,18 +48,21 @@ async fn main() -> Result<(),Error> {
 
     Ok(())
 }
-async fn deal_taxi_call(info_table: Arc<Mutex<InfoTable>> , session: Arc<Session>) -> Result<(),Error> {
+async fn deal_taxi_call(
+    info_table: Arc<Mutex<InfoTable>>,
+    session: Arc<Session>,
+) -> Result<(), Error> {
     let subscriber = session.declare_subscriber("rsu/calling_taxi").res().await?;
     let publisher = session.declare_publisher("rsu/task_assign").res().await?;
     println!("RSU is waiting for taxi call");
-    while let Ok(sample) = subscriber.recv_async().await{
+    while let Ok(sample) = subscriber.recv_async().await {
         println!("Received taxi call");
         let value = sample.value.try_into()?;
         let call_taxi: CallTaxi = serde_json::from_value(value)?;
         println!("Received taxi call: {:?}", call_taxi);
         //update infotable
         let mut guard = info_table.lock().await;
-        guard.task.push(Task{
+        guard.task.push(Task {
             task_id: call_taxi.task_id,
             cur_location: call_taxi.cur_location,
             des_location: call_taxi.des_location,
@@ -65,14 +73,13 @@ async fn deal_taxi_call(info_table: Arc<Mutex<InfoTable>> , session: Arc<Session
         //broadcast task
         let value = serde_json::to_value(call_taxi)?;
         publisher.put(value).res().await?;
-        
     }
     Ok(())
 }
 
-async fn merge_task(info_table: Arc<Mutex<InfoTable>>, session: Arc<Session>) -> Result<(),Error> {
+async fn merge_task(info_table: Arc<Mutex<InfoTable>>, session: Arc<Session>) -> Result<(), Error> {
     let subscriber = session.declare_subscriber("task_request").res().await?;
-    while let Ok(sample) = subscriber.recv_async().await{
+    while let Ok(sample) = subscriber.recv_async().await {
         let value = sample.value.try_into()?;
         let require_task: RequireTask = serde_json::from_value(value)?;
         let mut guard = info_table.lock().await;
