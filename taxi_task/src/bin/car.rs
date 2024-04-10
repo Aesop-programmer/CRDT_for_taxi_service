@@ -74,3 +74,4 @@ async fn merge_task(info_table: Arc<Mutex<InfoTable>>, session: Arc<Session>) ->
         guard.merge_task(require_task);
     }
 }
+
