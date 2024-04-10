@@ -1,9 +1,10 @@
 use clap::Parser;
 use futures::{self, FutureExt};
 use std::{path::PathBuf, sync::Arc, time::Duration};
-use taxi_task::{InfoTable, RequireTask};
+use taxi_task::{InfoTable, RequireTask, VehicleState};
 use tokio::sync::Mutex;
 use zenoh::prelude::r#async::*;
+use inquire::Text;
 
 type Error = Box<dyn std::error::Error + Sync + Send>;
 
@@ -32,6 +33,15 @@ async fn main() -> Result<(), Error> {
         zenoh::open(config).res().await?.into_arc()
     };
 
+    // car id from command line
+    let request = 'input_loop: loop{
+        Text::new(&format!("Press [ENTER] to login your car id.\n")).prompt()?;
+        let car_id = read_car_id("your car id:")?;
+        break car_id
+    };
+
+
+    let vehicle_state = Arc::new(Mutex::new(VehicleState::new(request)));
     let info_table = Arc::new(Mutex::new(InfoTable::new()));
 
     macro_rules! spawn {
@@ -54,14 +64,42 @@ async fn main() -> Result<(), Error> {
     // TODO: Implement commanding to Autoware.
     println!("Car is running");
     futures::try_join!(
-        spawn!(merge_task(info_table.clone(), session.clone())),
+        spawn!(merge_task(info_table.clone(), session.clone(), vehicle_state.clone())),
         spin_task,
     )?;
 
     Ok(())
 }
 
-async fn merge_task(info_table: Arc<Mutex<InfoTable>>, session: Arc<Session>) -> Result<(), Error> {
+fn read_car_id(prompt: &str) -> Result<u32, Error> {
+    // The loop runs until user gives a valid lat/lon position.
+    loop {
+        macro_rules! bail {
+            () => {{
+                eprintln!("incorrect car_id");
+                continue;
+            }};
+        }
+
+        // Get user input.
+        let text = Text::new(prompt).prompt()?;
+
+        // Check if it has one tokens, 
+        let tokens: Vec<_> = text.split_ascii_whitespace().collect();
+        let [car] = tokens.as_slice() else {
+            bail!();
+        };
+
+        // Parse the tokens to floats.
+        let Ok(car_id) = car.parse() else {
+            bail!()
+        };
+
+        return Ok(car_id);
+    }
+}
+
+async fn merge_task(info_table: Arc<Mutex<InfoTable>>, session: Arc<Session>, vehicle_state: Arc<Mutex<VehicleState>>) -> Result<(), Error> {
     let subscriber = session.declare_subscriber("task_request").res().await?;
 
     loop {
@@ -70,8 +108,23 @@ async fn merge_task(info_table: Arc<Mutex<InfoTable>>, session: Arc<Session>) ->
             let value: serde_json::Value = sample.value.try_into()?;
             serde_json::from_value(value)?
         };
-        let mut guard = info_table.lock().await;
-        guard.merge_task(require_task);
+        //check if this require task complete with our car
+        let mut guard_info_table = info_table.lock().await;        
+        guard_info_table.merge_task(require_task.clone());
+
+        let mut guard_vehicle = vehicle_state.lock().await;
+        // if the car fails competing for the task, it needs to be reset 
+        if guard_vehicle.assigned_task == Some(require_task.task_id) {
+            let task = guard_info_table.task.get(&require_task.task_id).unwrap();
+            if task.assigned_car != Some(guard_vehicle.car_id) {
+                guard_vehicle.busy = false;
+                guard_vehicle.assigned_task = None;
+                //todo: change the car state in atuoware and look for new task
+            }
+        }
     }
 }
 
+async fn listen_task(info_table: Arc<Mutex<InfoTable>>, session: Arc<Session>, vehicle_state: Arc<Mutex<VehicleState>>) -> Result<(), Error>{
+    Ok(())
+}

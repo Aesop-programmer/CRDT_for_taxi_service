@@ -5,7 +5,7 @@ use std::collections::HashMap;
 pub struct VehicleState {
     pub car_id: u32,
     pub busy: bool,
-    pub assigned_task: u32, // 0 indicates no task is assigned
+    pub assigned_task: Option<u32>, // 0 indicates no task is assigned
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -42,7 +42,7 @@ impl VehicleState {
         VehicleState {
             car_id,
             busy: false,
-            assigned_task: 0,
+            assigned_task: None,
         }
     }
 }
