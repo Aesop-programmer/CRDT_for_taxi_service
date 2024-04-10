@@ -19,7 +19,7 @@ pub struct Task {
     pub task_id: u32,
     pub cur_location: LatLon, // todo fill in location
     pub des_location: LatLon, // todo fill in location
-    pub timestamp: Option<u64>,
+    pub timestamp: Option<i64>,
     pub assigned_car: Option<u32>, // 0 indicates no car is assigned
 }
 
@@ -34,7 +34,7 @@ pub struct CallTaxi {
 pub struct RequireTask {
     pub task_id: u32,
     pub car_id: u32,
-    pub timestamp: u64,
+    pub timestamp: i64,
 }
 
 impl VehicleState {

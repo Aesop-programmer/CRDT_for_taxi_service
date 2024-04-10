@@ -1,11 +1,12 @@
 use clap::Parser;
 use futures::{self, FutureExt};
 use std::{path::PathBuf, sync::Arc, time::Duration};
-use taxi_task::{InfoTable, RequireTask, VehicleState};
+use taxi_task::{InfoTable, RequireTask, VehicleState, Task};
 use tokio::sync::Mutex;
-use zenoh::prelude::r#async::*;
+use zenoh::{prelude::r#async::*, subscriber};
 use inquire::Text;
-
+use unix_ts::{Timestamp, ts};
+use rand::prelude::*;
 type Error = Box<dyn std::error::Error + Sync + Send>;
 
 /// The vehicle node that demonstrates taxi task assignment algorithm.
@@ -101,7 +102,7 @@ fn read_car_id(prompt: &str) -> Result<u32, Error> {
 
 async fn merge_task(info_table: Arc<Mutex<InfoTable>>, session: Arc<Session>, vehicle_state: Arc<Mutex<VehicleState>>) -> Result<(), Error> {
     let subscriber = session.declare_subscriber("task_request").res().await?;
-
+    let publisher = session.declare_publisher("task_request").res().await?;
     loop {
         let require_task: RequireTask = {
             let sample = subscriber.recv_async().await?;
@@ -119,12 +120,61 @@ async fn merge_task(info_table: Arc<Mutex<InfoTable>>, session: Arc<Session>, ve
             if task.assigned_car != Some(guard_vehicle.car_id) {
                 guard_vehicle.busy = false;
                 guard_vehicle.assigned_task = None;
-                //todo: change the car state in atuoware and look for new task
+                for (key, value) in guard_info_table.task.iter_mut() {
+                    if value.assigned_car == None {
+                        guard_vehicle.busy = true;
+                        guard_vehicle.assigned_task = Some(value.task_id);
+                        let require_task = RequireTask{
+                            task_id: value.task_id,
+                            car_id: guard_vehicle.car_id,
+                            timestamp: Timestamp::now().seconds() + (rand::random::<i64>() % 10),
+                        };
+                        let value = serde_json::to_value(require_task)?;
+                        publisher.put(value).res().await?;
+                        break;
+                    
+                    }
+                }
+                //todo: change the car state in atuoware
             }
         }
     }
 }
 
 async fn listen_task(info_table: Arc<Mutex<InfoTable>>, session: Arc<Session>, vehicle_state: Arc<Mutex<VehicleState>>) -> Result<(), Error>{
+    let subscriber = session.declare_subscriber("rsu/task_assign").res().await?;
+    let publisher = session.declare_publisher("task_request").res().await?;
+    loop {
+        let task: Task= {
+            let sample = subscriber.recv_async().await?;
+            let value: serde_json::Value = sample.value.try_into()?;
+            serde_json::from_value(value)?
+        };
+        let mut guard_info_table = info_table.lock().await;
+        if guard_info_table.task.contains_key(&task.task_id){
+            continue;
+        }
+        else{
+            guard_info_table.task.insert(task.task_id, task.clone());
+        }
+        // check whether car is busy or not 
+        let mut guard_vehicle = vehicle_state.lock().await;
+        if guard_vehicle.busy == false {
+            guard_vehicle.busy = true;
+            guard_vehicle.assigned_task = Some(task.task_id);
+
+            let require_task = RequireTask{
+                task_id: task.task_id,
+                car_id: guard_vehicle.car_id,
+                timestamp: Timestamp::now().seconds() + (rand::random::<i64>() % 10),
+            };
+            let value = serde_json::to_value(require_task)?;
+            publisher.put(value).res().await?;
+
+            //todo change the car state in autoware
+        }
+    }
+
     Ok(())
 }
+
