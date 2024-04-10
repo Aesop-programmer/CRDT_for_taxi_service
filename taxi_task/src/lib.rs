@@ -67,7 +67,18 @@ impl InfoTable {
 
     pub fn merge_task(&mut self, task: RequireTask) {
         let Some(my_task) = self.task.get_mut(&task.task_id) else {
-            todo!();
+            //indicate RequireTask arrive before CallTaxi. Car will not compete for this task, becasue its timestamp must be later.
+            self.task.insert(
+                task.task_id,
+                Task {
+                    task_id: task.task_id,
+                    cur_location: LatLon { lon: 0.0, lat: 0.0 },
+                    des_location: LatLon { lon: 0.0, lat: 0.0 },
+                    timestamp: None,
+                    assigned_car: Some(task.car_id),
+                },
+            );
+            return;
         };
 
         if my_task.assigned_car.is_none() {
