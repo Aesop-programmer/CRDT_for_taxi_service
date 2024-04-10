@@ -77,7 +77,11 @@ async fn deal_taxi_call(
         //update infotable
         let mut guard = info_table.lock().await;
 
-        // TODO: check before insertion
+        // indicate the task has been assigned
+        if guard.task.contains_key(&call_taxi.task_id) {
+            continue;
+        }
+
         guard.task.insert(
             call_taxi.task_id,
             Task {
