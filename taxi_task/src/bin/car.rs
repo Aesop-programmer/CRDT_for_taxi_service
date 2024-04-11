@@ -66,6 +66,7 @@ async fn main() -> Result<(), Error> {
     println!("Car is running");
     futures::try_join!(
         spawn!(merge_task(info_table.clone(), session.clone(), vehicle_state.clone())),
+        spawn!(listen_task(info_table.clone(), session.clone(), vehicle_state.clone())),
         spin_task,
     )?;
 
@@ -138,6 +139,9 @@ async fn merge_task(info_table: Arc<Mutex<InfoTable>>, session: Arc<Session>, ve
                 //todo: change the car state in atuoware
             }
         }
+        eprint!("Receive task request: {:?}\n", require_task.clone());
+        eprint!("Current task table: {:?}\n", guard_info_table.task.clone());
+        eprint!("Current vehicle state: {:?}\n", guard_vehicle.clone());
     }
 }
 
@@ -173,6 +177,9 @@ async fn listen_task(info_table: Arc<Mutex<InfoTable>>, session: Arc<Session>, v
 
             //todo change the car state in autoware
         }
+        eprint!("Receive task assign: {:?}\n", task.clone());
+        eprint!("Current task table: {:?}\n", guard_info_table.task.clone());
+        eprint!("Current vehicle state: {:?}\n", guard_vehicle.clone());
     }
 
     Ok(())
