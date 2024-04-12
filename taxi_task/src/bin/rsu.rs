@@ -1,8 +1,12 @@
 use clap::Parser;
 use futures::{self, FutureExt};
-use std::{path::PathBuf, sync::Arc, time::Duration};
+use std::{
+    path::PathBuf,
+    sync::Arc,
+    time::{Duration, SystemTime},
+};
 use taxi_task::{CallTaxi, InfoTable, RequireTask, Task};
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, Notify};
 use zenoh::prelude::r#async::*;
 type Error = Box<dyn std::error::Error + Sync + Send>;
 
@@ -32,6 +36,7 @@ async fn main() -> Result<(), Error> {
     };
 
     let info_table = Arc::new(Mutex::new(InfoTable::new()));
+    let notify = Arc::new(Notify::new());
 
     macro_rules! spawn {
         ($fut:expr) => {{
@@ -51,14 +56,24 @@ async fn main() -> Result<(), Error> {
     });
     println!("RSU is running");
     futures::try_join!(
-        spawn!(deal_taxi_call(info_table.clone(), session.clone())),
-        spawn!(merge_task(info_table.clone(), session.clone())),
+        spawn!(deal_taxi_call(
+            notify.clone(),
+            info_table.clone(),
+            session.clone()
+        )),
+        spawn!(merge_task(
+            notify.clone(),
+            info_table.clone(),
+            session.clone()
+        )),
+        printer(notify.clone(), info_table.clone()),
         spin_task,
     )?;
 
     Ok(())
 }
 async fn deal_taxi_call(
+    notify: Arc<Notify>,
     info_table: Arc<Mutex<InfoTable>>,
     session: Arc<Session>,
 ) -> Result<(), Error> {
@@ -93,7 +108,7 @@ async fn deal_taxi_call(
             },
         );
 
-        println!("InfoTable: {:?}", guard.task);
+        notify.notify_one();
 
         //broadcast task
         let value = serde_json::to_value(call_taxi)?;
@@ -101,7 +116,11 @@ async fn deal_taxi_call(
     }
 }
 
-async fn merge_task(info_table: Arc<Mutex<InfoTable>>, session: Arc<Session>) -> Result<(), Error> {
+async fn merge_task(
+    notify: Arc<Notify>,
+    info_table: Arc<Mutex<InfoTable>>,
+    session: Arc<Session>,
+) -> Result<(), Error> {
     let subscriber = session.declare_subscriber("task_request").res().await?;
 
     loop {
@@ -112,5 +131,31 @@ async fn merge_task(info_table: Arc<Mutex<InfoTable>>, session: Arc<Session>) ->
         };
         let mut guard = info_table.lock().await;
         guard.merge_task(require_task);
+        notify.notify_one();
+    }
+}
+
+async fn printer(notify: Arc<Notify>, info_table: Arc<Mutex<InfoTable>>) -> Result<(), Error> {
+    const PERIOD: Duration = Duration::from_secs(1000);
+
+    let mut interval = tokio::time::interval(PERIOD);
+
+    loop {
+        tokio::select! {
+            _ = interval.tick() => {},
+            _ = notify.notified() => {}
+        }
+
+        tokio::time::sleep(Duration::from_millis(1000)).await;
+
+        eprintln!("-----------------------------------------");
+        eprintln!("# Time: {:?}", SystemTime::now());
+
+        {
+            let info_table = info_table.lock().await;
+
+            eprintln!("# Task table:");
+            eprintln!("{:#?}", *info_table);
+        }
     }
 }

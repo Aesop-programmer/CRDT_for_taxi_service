@@ -1,15 +1,22 @@
 use clap::Parser;
 use futures::{self, FutureExt};
 use inquire::Text;
-use r2r::autoware_adapi_v1_msgs::srv::{ChangeOperationMode, ClearRoute, SetRoutePoints};
-use r2r::geometry_msgs::msg::Pose;
-use r2r::{Client, WrappedTypesupport};
-use rand::prelude::*;
-use std::{path::PathBuf, sync::Arc, time::Duration};
+use r2r::{
+    autoware_adapi_v1_msgs::srv::{ChangeOperationMode, ClearRoute, SetRoutePoints},
+    geometry_msgs::msg::Pose,
+    Client,
+};
+use rand::{prelude::*, rngs::OsRng};
+use std::{
+    path::PathBuf,
+    sync::Arc,
+    time::{Duration, SystemTime},
+};
 use taxi_task::{InfoTable, RequireTask, Task, VehicleState};
-use tokio::sync::Mutex;
-use unix_ts::{ts, Timestamp};
-use zenoh::{prelude::r#async::*, subscriber};
+use tokio::sync::{Mutex, Notify};
+use unix_ts::Timestamp;
+use zenoh::prelude::r#async::*;
+
 type Error = Box<dyn std::error::Error + Sync + Send>;
 
 /// The vehicle node that demonstrates taxi task assignment algorithm.
@@ -52,14 +59,15 @@ async fn main() -> Result<(), Error> {
     };
 
     // car id from command line
-    let request = 'input_loop: loop {
-        Text::new(&format!("Press [ENTER] to login your car id.\n")).prompt()?;
+    let request = loop {
+        Text::new("Press [ENTER] to login your car id.\n").prompt()?;
         let car_id = read_car_id("your car id:")?;
         break car_id;
     };
 
     let vehicle_state = Arc::new(Mutex::new(VehicleState::new(request)));
     let info_table = Arc::new(Mutex::new(InfoTable::new()));
+    let notify = Arc::new(Notify::new());
 
     macro_rules! spawn {
         ($fut:expr) => {{
@@ -82,6 +90,7 @@ async fn main() -> Result<(), Error> {
     println!("Car is running");
     futures::try_join!(
         spawn!(merge_task(
+            notify.clone(),
             info_table.clone(),
             session.clone(),
             vehicle_state.clone(),
@@ -91,6 +100,7 @@ async fn main() -> Result<(), Error> {
             change_to_auto.clone()
         )),
         spawn!(listen_task(
+            notify.clone(),
             info_table.clone(),
             session.clone(),
             vehicle_state.clone(),
@@ -99,6 +109,7 @@ async fn main() -> Result<(), Error> {
             change_to_stop.clone(),
             change_to_auto.clone()
         )),
+        printer(notify.clone(), info_table.clone(), vehicle_state.clone(),),
         spin_task,
     )?;
 
@@ -132,6 +143,7 @@ fn read_car_id(prompt: &str) -> Result<u32, Error> {
 }
 
 async fn merge_task(
+    notify: Arc<Notify>,
     info_table: Arc<Mutex<InfoTable>>,
     session: Arc<Session>,
     vehicle_state: Arc<Mutex<VehicleState>>,
@@ -140,8 +152,11 @@ async fn merge_task(
     change_to_stop: Arc<Mutex<Client<ChangeOperationMode::Service>>>,
     change_to_auto: Arc<Mutex<Client<ChangeOperationMode::Service>>>,
 ) -> Result<(), Error> {
+    let mut rng = OsRng::default();
+
     let subscriber = session.declare_subscriber("task_request").res().await?;
     let publisher = session.declare_publisher("task_request").res().await?;
+
     loop {
         let require_task: RequireTask = {
             let sample = subscriber.recv_async().await?;
@@ -159,14 +174,14 @@ async fn merge_task(
             if task.assigned_car != Some(guard_vehicle.car_id) {
                 guard_vehicle.busy = false;
                 guard_vehicle.assigned_task = None;
-                for (key, value) in guard_info_table.task.iter_mut() {
-                    if value.assigned_car == None {
+                for value in guard_info_table.task.values_mut() {
+                    if value.assigned_car.is_none() {
                         guard_vehicle.busy = true;
                         guard_vehicle.assigned_task = Some(value.task_id);
                         let require_task = RequireTask {
                             task_id: value.task_id,
                             car_id: guard_vehicle.car_id,
-                            timestamp: Timestamp::now().seconds() + (rand::random::<i64>() % 10),
+                            timestamp: Timestamp::now().seconds() + rng.gen_range(0..10),
                         };
                         let value = serde_json::to_value(require_task)?;
                         publisher.put(value).res().await?;
@@ -176,15 +191,15 @@ async fn merge_task(
                 // stop car
                 let stop = change_to_stop.lock().await;
                 let msg = ChangeOperationMode::Request {};
-                let req = stop.request(&msg).unwrap();
-                let res = req.await.unwrap();
+                let req = stop.request(&msg)?;
+                let _res = req.await?;
                 // clear route
                 let clear = clear_route.lock().await;
                 let msg = ClearRoute::Request {};
-                let req = clear.request(&msg).unwrap();
-                let res = req.await.unwrap();
+                let req = clear.request(&msg)?;
+                let _res = req.await?;
                 // if car does find new task
-                if guard_vehicle.busy == true {
+                if guard_vehicle.busy {
                     // set route
                     let set = set_route.lock().await;
                     let task = guard_info_table
@@ -192,27 +207,27 @@ async fn merge_task(
                         .get(&guard_vehicle.assigned_task.unwrap())
                         .unwrap();
                     let mut msg = SetRoutePoints::Request::default();
-                    msg.goal = Pose::default(); //todo task.des_location fill location
                     msg.waypoints.push(Pose::default()); //todo task.cur_location
-                    let req = set.request(&msg).unwrap();
-                    let res = req.await.unwrap();
+                    let req = set.request(&msg)?;
+                    req.await?;
 
                     // start auto mode
                     let auto = change_to_auto.lock().await;
                     let msg = ChangeOperationMode::Request {};
-                    let req = auto.request(&msg).unwrap();
-                    let res = req.await.unwrap();
+                    let req = auto.request(&msg)?;
+                    req.await?;
                 }
             }
             //todo: change the car state in atuoware
         }
-        eprint!("Receive task request: {:?}\n", require_task.clone());
-        eprint!("Current task table: {:?}\n", guard_info_table.task.clone());
-        eprint!("Current vehicle state: {:?}\n", guard_vehicle.clone());
+
+        eprintln!("Receive task request: {:?}", require_task.clone());
+        notify.notify_one();
     }
 }
 
 async fn listen_task(
+    notify: Arc<Notify>,
     info_table: Arc<Mutex<InfoTable>>,
     session: Arc<Session>,
     vehicle_state: Arc<Mutex<VehicleState>>,
@@ -237,7 +252,8 @@ async fn listen_task(
         }
         // check whether car is busy or not
         let mut guard_vehicle = vehicle_state.lock().await;
-        if guard_vehicle.busy == false {
+
+        if !guard_vehicle.busy {
             guard_vehicle.busy = true;
             guard_vehicle.assigned_task = Some(task.task_id);
 
@@ -254,15 +270,45 @@ async fn listen_task(
             // set route
             let set = set_route.lock().await;
             let mut msg = SetRoutePoints::Request::default();
-            msg.goal = Pose::default(); //todo task.des_location fill location
             msg.waypoints.push(Pose::default()); //todo task.cur_location
-            let req = set.request(&msg).unwrap();
-            let res = req.await.unwrap();
+            let req = set.request(&msg)?;
+            let _res = req.await?;
         }
-        eprint!("Receive task assign: {:?}\n", task.clone());
-        eprint!("Current task table: {:?}\n", guard_info_table.task.clone());
-        eprint!("Current vehicle state: {:?}\n", guard_vehicle.clone());
-    }
 
-    Ok(())
+        eprintln!("Receive task assign: {:?}", task.clone());
+        notify.notify_one();
+    }
+}
+
+async fn printer(
+    notify: Arc<Notify>,
+    info_table: Arc<Mutex<InfoTable>>,
+    vehicle_state: Arc<Mutex<VehicleState>>,
+) -> Result<(), Error> {
+    const PERIOD: Duration = Duration::from_secs(1000);
+
+    let mut interval = tokio::time::interval(PERIOD);
+
+    loop {
+        tokio::select! {
+            _ = interval.tick() => {},
+            _ = notify.notified() => {}
+        }
+
+        tokio::time::sleep(Duration::from_millis(1000)).await;
+
+        eprintln!("-----------------------------------------");
+        eprintln!("# Time: {:?}", SystemTime::now());
+
+        {
+            let info_table = info_table.lock().await;
+            let vehicle_state = vehicle_state.lock().await;
+
+            eprintln!("# Task table:");
+            eprintln!("{:#?}", *info_table);
+            eprintln!();
+            eprintln!("# Vehicle state:");
+            eprintln!("{:#?}", *vehicle_state);
+        }
+    }
 }
