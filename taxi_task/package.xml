@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>nycu_consensus</name>
+  <name>taxi_service</name>
   <version>0.0.0</version>
   <description>Planner module for NYCU project</description>
   <maintainer email="jerry73204@gmail.com">aeon</maintainer>
