@@ -267,12 +267,29 @@ async fn listen_task(
 
             //todo change the car state in autoware
 
+            // stop car
+            let stop = change_to_stop.lock().await;
+            let msg = ChangeOperationMode::Request {};
+            let req = stop.request(&msg)?;
+            let _res = req.await?;
+            // clear route
+            let clear = clear_route.lock().await;
+            let msg = ClearRoute::Request {};
+            let req = clear.request(&msg)?;
+            let _res = req.await?;
+
             // set route
             let set = set_route.lock().await;
             let mut msg = SetRoutePoints::Request::default();
             msg.waypoints.push(Pose::default()); //todo task.cur_location
             let req = set.request(&msg)?;
             let _res = req.await?;
+
+            // change to auto
+            let auto = change_to_auto.lock().await;
+            let msg = ChangeOperationMode::Request {};
+            let req = auto.request(&msg)?;
+            req.await?;
         }
 
         eprintln!("Receive task assign: {:?}", task.clone());
