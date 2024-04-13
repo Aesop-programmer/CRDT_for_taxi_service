@@ -37,20 +37,14 @@ async fn main() -> Result<(), Error> {
     let ctx = r2r::Context::create()?;
     let mut node = r2r::Node::create(ctx, "car", "")?;
 
-    let set_route_points = Arc::new(Mutex::new(
-        node.create_client::<SetRoutePoints::Service>("/api/routing/set_route_points")?,
-    ));
-    let clear_route = Arc::new(Mutex::new(
-        node.create_client::<ClearRoute::Service>("/api/routing/clear_route")?,
-    ));
-    let change_to_stop = Arc::new(Mutex::new(
-        node.create_client::<ChangeOperationMode::Service>("/api/operation_mode/change_to_stop")?,
-    ));
-    let change_to_auto = Arc::new(Mutex::new(
-        node.create_client::<ChangeOperationMode::Service>(
-            "/api/operation_mode/change_to_autonomous",
-        )?,
-    ));
+    let set_route_points =
+        node.create_client::<SetRoutePoints::Service>("/api/routing/set_route_points")?;
+    let clear_route = node.create_client::<ClearRoute::Service>("/api/routing/clear_route")?;
+    let change_to_stop =
+        node.create_client::<ChangeOperationMode::Service>("/api/operation_mode/change_to_stop")?;
+    let change_to_auto = node.create_client::<ChangeOperationMode::Service>(
+        "/api/operation_mode/change_to_autonomous",
+    )?;
 
     // Zenoh init
     let session = {
@@ -97,20 +91,16 @@ async fn main() -> Result<(), Error> {
             info_table.clone(),
             session.clone(),
             vehicle_state.clone(),
-            set_route_points.clone(),
-            clear_route.clone(),
-            change_to_stop.clone(),
-            change_to_auto.clone()
         )),
         spawn!(listen_task(
             notify.clone(),
             info_table.clone(),
             session.clone(),
             vehicle_state.clone(),
-            set_route_points.clone(),
-            clear_route.clone(),
-            change_to_stop.clone(),
-            change_to_auto.clone()
+            set_route_points,
+            clear_route,
+            change_to_stop,
+            change_to_auto
         )),
         printer(notify.clone(), info_table.clone(), vehicle_state.clone(),),
         spin_task,
@@ -150,10 +140,6 @@ async fn merge_task(
     info_table: Arc<Mutex<InfoTable>>,
     session: Arc<Session>,
     vehicle_state: Arc<Mutex<VehicleState>>,
-    set_route: Arc<Mutex<Client<SetRoutePoints::Service>>>,
-    clear_route: Arc<Mutex<Client<ClearRoute::Service>>>,
-    change_to_stop: Arc<Mutex<Client<ChangeOperationMode::Service>>>,
-    change_to_auto: Arc<Mutex<Client<ChangeOperationMode::Service>>>,
 ) -> Result<(), Error> {
     let mut rng = OsRng::default();
 
@@ -206,10 +192,10 @@ async fn listen_task(
     info_table: Arc<Mutex<InfoTable>>,
     session: Arc<Session>,
     vehicle_state: Arc<Mutex<VehicleState>>,
-    set_route: Arc<Mutex<Client<SetRoutePoints::Service>>>,
-    clear_route: Arc<Mutex<Client<ClearRoute::Service>>>,
-    change_to_stop: Arc<Mutex<Client<ChangeOperationMode::Service>>>,
-    change_to_auto: Arc<Mutex<Client<ChangeOperationMode::Service>>>,
+    set_route: Client<SetRoutePoints::Service>,
+    clear_route: Client<ClearRoute::Service>,
+    change_to_stop: Client<ChangeOperationMode::Service>,
+    change_to_auto: Client<ChangeOperationMode::Service>,
 ) -> Result<(), Error> {
     let subscriber = session.declare_subscriber("rsu/task_assign").res().await?;
     let publisher = session.declare_publisher("task_request").res().await?;
@@ -239,77 +225,83 @@ async fn listen_task(
                     car_id: guard_vehicle.car_id,
                     timestamp: Timestamp::now().seconds() + (rand::random::<i64>() % 10),
                 };
+                drop(guard_vehicle);
+
                 let value = serde_json::to_value(require_task)?;
                 publisher.put(value).res().await?;
             } else {
                 continue;
             }
         }
+
         tokio::time::sleep(Duration::from_millis(5000)).await;
 
-        let guard_vehicle = vehicle_state.lock().await;
-        if guard_vehicle.busy == true {
-            // stop car
-            let stop = change_to_stop.lock().await;
-            let msg = ChangeOperationMode::Request {};
-            let req = stop.request(&msg)?;
-            let _res = req.await?;
-            // clear route
-            let clear = clear_route.lock().await;
-            let msg = ClearRoute::Request {};
-            let req = clear.request(&msg)?;
-            let _res = req.await?;
-            // set route
-            let set = set_route.lock().await;
-
-            let msg = SetRoutePoints::Request {
-                header: Header {
-                    stamp: Clock::to_builtin_time(&clock.get_now()?),
-                    frame_id: "map".to_string(),
-                },
-                goal: task.cur_location.clone(),
-                ..SetRoutePoints::Request::default()
-            };
-
-            let req = set.request(&msg)?;
-            req.await?;
-
-            // start auto mode
-            let auto = change_to_auto.lock().await;
-            let msg = ChangeOperationMode::Request {};
-            let req = auto.request(&msg)?;
-            req.await?;
-            ////// arrive client current location, wait for client to type enter
-            Text::new(&format!("Press [ENTER] to start Task.\n")).prompt()?;
-
-            // stop car
-            let stop = change_to_stop.lock().await;
-            let msg = ChangeOperationMode::Request {};
-            let req = stop.request(&msg)?;
-            let _res = req.await?;
-            // clear route
-            let clear = clear_route.lock().await;
-            let msg = ClearRoute::Request {};
-            let req = clear.request(&msg)?;
-            let _res = req.await?;
-            let msg = SetRoutePoints::Request {
-                header: Header {
-                    stamp: Clock::to_builtin_time(&clock.get_now()?),
-                    frame_id: "map".to_string(),
-                },
-                goal: task.des_location.clone(),
-                ..SetRoutePoints::Request::default()
-            };
-
-            let req = set.request(&msg)?;
-            req.await?;
-
-            // start auto mode
-            let auto = change_to_auto.lock().await;
-            let msg = ChangeOperationMode::Request {};
-            let req = auto.request(&msg)?;
-            req.await?;
+        {
+            let guard_vehicle = vehicle_state.lock().await;
+            if !guard_vehicle.busy {
+                continue;
+            }
+            println!("Execute task {}", guard_vehicle.assigned_task.unwrap());
         }
+
+        // stop car
+        let msg = ChangeOperationMode::Request {};
+        let req = change_to_stop.request(&msg)?;
+        let _res = req.await?;
+
+        // clear route
+        let msg = ClearRoute::Request {};
+        let req = clear_route.request(&msg)?;
+        let _res = req.await?;
+
+        // set route
+
+        let msg = SetRoutePoints::Request {
+            header: Header {
+                stamp: Clock::to_builtin_time(&clock.get_now()?),
+                frame_id: "map".to_string(),
+            },
+            goal: task.cur_location.clone(),
+            ..SetRoutePoints::Request::default()
+        };
+        let req = set_route.request(&msg)?;
+        let _res = req.await?;
+
+        // start auto mode
+        let msg = ChangeOperationMode::Request {};
+        let req = change_to_auto.request(&msg)?;
+        let _res = req.await?;
+
+        // ////// arrive client current location, wait for client to type enter
+        Text::new(&format!("Press [ENTER] to continue task.\n")).prompt()?;
+        Text::new(&format!("Press [ENTER] to confirm.\n")).prompt()?;
+
+        // stop car
+        let msg = ChangeOperationMode::Request {};
+        let req = change_to_stop.request(&msg)?;
+        let _res = req.await?;
+
+        // clear route
+        let msg = ClearRoute::Request {};
+        let req = clear_route.request(&msg)?;
+        let _res = req.await?;
+
+        let msg = SetRoutePoints::Request {
+            header: Header {
+                stamp: Clock::to_builtin_time(&clock.get_now()?),
+                frame_id: "map".to_string(),
+            },
+            goal: task.des_location.clone(),
+            ..SetRoutePoints::Request::default()
+        };
+
+        let req = set_route.request(&msg)?;
+        let _res = req.await?;
+
+        // start auto mode
+        let msg = ChangeOperationMode::Request {};
+        let req = change_to_auto.request(&msg)?;
+        let _res = req.await?;
     }
 }
 
@@ -324,11 +316,9 @@ async fn printer(
 
     loop {
         tokio::select! {
-            _ = interval.tick() => {},
+            //_ = interval.tick() => {},
             _ = notify.notified() => {}
         }
-
-        tokio::time::sleep(Duration::from_millis(1000)).await;
 
         eprintln!("-----------------------------------------");
         eprintln!("# Time: {:?}", SystemTime::now());
