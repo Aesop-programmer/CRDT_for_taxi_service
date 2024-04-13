@@ -84,11 +84,9 @@ async fn deal_taxi_call(
     loop {
         let sample = subscriber.recv_async().await?;
 
-        println!("Received taxi call");
         let value: serde_json::Value = sample.value.try_into()?;
         let call_taxi: CallTaxi = serde_json::from_value(value)?;
-        println!("Received taxi call: {:?}", call_taxi);
-
+        println!("Received taxi call");
         //update infotable
         let mut guard = info_table.lock().await;
 
@@ -100,9 +98,9 @@ async fn deal_taxi_call(
         guard.task.insert(
             call_taxi.task_id,
             Task {
-                task_id: call_taxi.task_id,
-                cur_location: call_taxi.cur_location,
-                des_location: call_taxi.des_location,
+                task_id: call_taxi.task_id.clone(),
+                cur_location: call_taxi.cur_location.clone(),
+                des_location: call_taxi.des_location.clone(),
                 timestamp: None,
                 assigned_car: None,
             },

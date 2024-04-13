@@ -1,6 +1,9 @@
+use r2r::{
+    eagleye_msgs::msg::Position,
+    geometry_msgs::msg::{Point, Pose, Quaternion},
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VehicleState {
     pub car_id: u32,
@@ -17,8 +20,8 @@ pub struct InfoTable {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Task {
     pub task_id: u32,
-    pub cur_location: LatLon, // todo fill in location
-    pub des_location: LatLon, // todo fill in location
+    pub cur_location: Pose, // todo fill in location
+    pub des_location: Pose, // todo fill in location
     pub timestamp: Option<i64>,
     pub assigned_car: Option<u32>, // 0 indicates no car is assigned
 }
@@ -26,8 +29,8 @@ pub struct Task {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CallTaxi {
     pub task_id: u32,
-    pub cur_location: LatLon, // todo fill in location
-    pub des_location: LatLon, // todo fill in location
+    pub cur_location: Pose, // todo fill in location
+    pub des_location: Pose, // todo fill in location
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -72,8 +75,32 @@ impl InfoTable {
                 task.task_id,
                 Task {
                     task_id: task.task_id,
-                    cur_location: LatLon { lon: 0.0, lat: 0.0 },
-                    des_location: LatLon { lon: 0.0, lat: 0.0 },
+                    cur_location: Pose {
+                        position: Point {
+                            x: 0.0,
+                            y: 0.0,
+                            z: 0.0,
+                        },
+                        orientation: Quaternion {
+                            x: 0.0,
+                            y: 0.0,
+                            z: 0.0,
+                            w: 0.0,
+                        },
+                    },
+                    des_location: Pose {
+                        position: Point {
+                            x: 0.0,
+                            y: 0.0,
+                            z: 0.0,
+                        },
+                        orientation: Quaternion {
+                            x: 0.0,
+                            y: 0.0,
+                            z: 0.0,
+                            w: 0.0,
+                        },
+                    },
                     timestamp: None,
                     assigned_car: Some(task.car_id),
                 },
@@ -93,8 +120,7 @@ impl InfoTable {
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub struct LatLon {
-    pub lon: f32,
-    pub lat: f32,
+struct LatLon {
+    cur: f64,
+    des: f64,
 }

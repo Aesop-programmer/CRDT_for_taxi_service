@@ -12,7 +12,7 @@ use r2r::{
     std_msgs::msg::Header,
     Client, Clock, ClockType, QosProfile,
 };
-use std::{fmt::Debug, path::PathBuf, pin::Pin, time::Duration};
+use std::{fmt::Debug, path::PathBuf, pin::Pin, thread, time::Duration};
 
 pub type Subscriber<T> = Pin<Box<dyn Stream<Item = T> + Send>>;
 

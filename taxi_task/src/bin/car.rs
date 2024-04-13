@@ -3,13 +3,15 @@ use futures::{self, FutureExt};
 use inquire::Text;
 use r2r::{
     autoware_adapi_v1_msgs::srv::{ChangeOperationMode, ClearRoute, SetRoutePoints},
-    geometry_msgs::msg::Pose,
-    Client,
+    geometry_msgs::msg::{Point, Pose, Quaternion},
+    std_msgs::msg::Header,
+    Client, Clock, ClockType, QosProfile,
 };
 use rand::{prelude::*, rngs::OsRng};
 use std::{
     path::PathBuf,
     sync::Arc,
+    thread,
     time::{Duration, SystemTime},
 };
 use taxi_task::{InfoTable, RequireTask, Task, VehicleState};
@@ -34,6 +36,7 @@ async fn main() -> Result<(), Error> {
     // ROS
     let ctx = r2r::Context::create()?;
     let mut node = r2r::Node::create(ctx, "car", "")?;
+
     let set_route_points = Arc::new(Mutex::new(
         node.create_client::<SetRoutePoints::Service>("/api/routing/set_route_points")?,
     ));
@@ -156,6 +159,7 @@ async fn merge_task(
 
     let subscriber = session.declare_subscriber("task_request").res().await?;
     let publisher = session.declare_publisher("task_request").res().await?;
+    let mut clock = Clock::create(ClockType::RosTime)?;
 
     loop {
         let require_task: RequireTask = {
@@ -188,35 +192,6 @@ async fn merge_task(
                         break;
                     }
                 }
-                // stop car
-                let stop = change_to_stop.lock().await;
-                let msg = ChangeOperationMode::Request {};
-                let req = stop.request(&msg)?;
-                let _res = req.await?;
-                // clear route
-                let clear = clear_route.lock().await;
-                let msg = ClearRoute::Request {};
-                let req = clear.request(&msg)?;
-                let _res = req.await?;
-                // if car does find new task
-                if guard_vehicle.busy {
-                    // set route
-                    let set = set_route.lock().await;
-                    let task = guard_info_table
-                        .task
-                        .get(&guard_vehicle.assigned_task.unwrap())
-                        .unwrap();
-                    let mut msg = SetRoutePoints::Request::default();
-                    msg.waypoints.push(Pose::default()); //todo task.cur_location
-                    let req = set.request(&msg)?;
-                    req.await?;
-
-                    // start auto mode
-                    let auto = change_to_auto.lock().await;
-                    let msg = ChangeOperationMode::Request {};
-                    let req = auto.request(&msg)?;
-                    req.await?;
-                }
             }
             //todo: change the car state in atuoware
         }
@@ -238,34 +213,74 @@ async fn listen_task(
 ) -> Result<(), Error> {
     let subscriber = session.declare_subscriber("rsu/task_assign").res().await?;
     let publisher = session.declare_publisher("task_request").res().await?;
+    let mut clock = Clock::create(ClockType::RosTime)?;
     loop {
         let task: Task = {
             let sample = subscriber.recv_async().await?;
             let value: serde_json::Value = sample.value.try_into()?;
             serde_json::from_value(value)?
         };
-        let mut guard_info_table = info_table.lock().await;
-        if guard_info_table.task.contains_key(&task.task_id) {
-            continue;
-        } else {
-            guard_info_table.task.insert(task.task_id, task.clone());
+        {
+            let mut guard_info_table = info_table.lock().await;
+            if guard_info_table.task.contains_key(&task.task_id) {
+                continue;
+            } else {
+                guard_info_table.task.insert(task.task_id, task.clone());
+            }
+            // check whether car is busy or not
+            let mut guard_vehicle = vehicle_state.lock().await;
+
+            if !guard_vehicle.busy {
+                guard_vehicle.busy = true;
+                guard_vehicle.assigned_task = Some(task.task_id);
+
+                let require_task = RequireTask {
+                    task_id: task.task_id,
+                    car_id: guard_vehicle.car_id,
+                    timestamp: Timestamp::now().seconds() + (rand::random::<i64>() % 10),
+                };
+                let value = serde_json::to_value(require_task)?;
+                publisher.put(value).res().await?;
+            } else {
+                continue;
+            }
         }
-        // check whether car is busy or not
-        let mut guard_vehicle = vehicle_state.lock().await;
+        tokio::time::sleep(Duration::from_millis(5000)).await;
 
-        if !guard_vehicle.busy {
-            guard_vehicle.busy = true;
-            guard_vehicle.assigned_task = Some(task.task_id);
+        let guard_vehicle = vehicle_state.lock().await;
+        if guard_vehicle.busy == true {
+            // stop car
+            let stop = change_to_stop.lock().await;
+            let msg = ChangeOperationMode::Request {};
+            let req = stop.request(&msg)?;
+            let _res = req.await?;
+            // clear route
+            let clear = clear_route.lock().await;
+            let msg = ClearRoute::Request {};
+            let req = clear.request(&msg)?;
+            let _res = req.await?;
+            // set route
+            let set = set_route.lock().await;
 
-            let require_task = RequireTask {
-                task_id: task.task_id,
-                car_id: guard_vehicle.car_id,
-                timestamp: Timestamp::now().seconds() + (rand::random::<i64>() % 10),
+            let msg = SetRoutePoints::Request {
+                header: Header {
+                    stamp: Clock::to_builtin_time(&clock.get_now()?),
+                    frame_id: "map".to_string(),
+                },
+                goal: task.cur_location.clone(),
+                ..SetRoutePoints::Request::default()
             };
-            let value = serde_json::to_value(require_task)?;
-            publisher.put(value).res().await?;
 
-            //todo change the car state in autoware
+            let req = set.request(&msg)?;
+            req.await?;
+
+            // start auto mode
+            let auto = change_to_auto.lock().await;
+            let msg = ChangeOperationMode::Request {};
+            let req = auto.request(&msg)?;
+            req.await?;
+            ////// arrive client current location, wait for client to type enter
+            Text::new(&format!("Press [ENTER] to start Task.\n")).prompt()?;
 
             // stop car
             let stop = change_to_stop.lock().await;
@@ -277,23 +292,24 @@ async fn listen_task(
             let msg = ClearRoute::Request {};
             let req = clear.request(&msg)?;
             let _res = req.await?;
+            let msg = SetRoutePoints::Request {
+                header: Header {
+                    stamp: Clock::to_builtin_time(&clock.get_now()?),
+                    frame_id: "map".to_string(),
+                },
+                goal: task.des_location.clone(),
+                ..SetRoutePoints::Request::default()
+            };
 
-            // set route
-            let set = set_route.lock().await;
-            let mut msg = SetRoutePoints::Request::default();
-            msg.waypoints.push(Pose::default()); //todo task.cur_location
             let req = set.request(&msg)?;
-            let _res = req.await?;
+            req.await?;
 
-            // change to auto
+            // start auto mode
             let auto = change_to_auto.lock().await;
             let msg = ChangeOperationMode::Request {};
             let req = auto.request(&msg)?;
             req.await?;
         }
-
-        eprintln!("Receive task assign: {:?}", task.clone());
-        notify.notify_one();
     }
 }
 

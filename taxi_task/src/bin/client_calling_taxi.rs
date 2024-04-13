@@ -1,9 +1,9 @@
 use clap::Parser;
 use inquire::Text;
+use r2r::geometry_msgs::msg::{Point, Pose, Quaternion};
 use std::path::PathBuf;
-use taxi_task::{CallTaxi, LatLon};
+use taxi_task::CallTaxi;
 use zenoh::prelude::r#async::*;
-
 type Error = Box<dyn std::error::Error + Sync + Send>;
 
 /// The interactive shell that assigns passenger tasks.
@@ -37,18 +37,18 @@ async fn main() -> Result<(), Error> {
             Text::new(&format!("Press [ENTER] to start Task {task_id}.\n")).prompt()?;
 
             // Ask for coordinates.
-            let cur_location = read_position("Pick-up position (lat lon):")?;
-            let des_location = read_position("Goal position (lat lon):")?;
+            let cur_location = read_position("Pick-up position (1..8):")?;
+            let des_location = read_position("Goal position (1..8):")?;
 
             // Ask the user to confirm the input.
             loop {
                 let answer = Text::new(&format!(
                     "Is this task correct?
 task ID: {task_id}
-Pick-up: lat={} lon={}
-Goal: lat={} lon={}
+Pick-up: location={}
+Goal: location={}
 Enter ([y]/n):",
-                    cur_location.lat, cur_location.lon, des_location.lat, des_location.lon
+                    cur_location, des_location
                 ))
                 .prompt()?;
 
@@ -60,7 +60,220 @@ Enter ([y]/n):",
                     }
                 }
             }
-
+            let cur_location = match cur_location {
+                1 => Pose {
+                    position: Point {
+                        x: 66.7734,
+                        y: 3.68743,
+                        z: 0.0,
+                    },
+                    orientation: Quaternion {
+                        x: 0.0,
+                        y: 0.0,
+                        z: 0.996593,
+                        w: 0.0824797,
+                    },
+                },
+                2 => Pose {
+                    position: Point {
+                        x: -27.1465,
+                        y: 2.29813,
+                        z: 0.0,
+                    },
+                    orientation: Quaternion {
+                        x: 0.0,
+                        y: 0.0,
+                        z: -0.999136,
+                        w: 0.0415587,
+                    },
+                },
+                3 => Pose {
+                    position: Point {
+                        x: -80.6396,
+                        y: -0.649459,
+                        z: 0.0,
+                    },
+                    orientation: Quaternion {
+                        x: 0.0,
+                        y: 0.0,
+                        z: -0.999273,
+                        w: 0.0381171,
+                    },
+                },
+                4 => Pose {
+                    position: Point {
+                        x: -86.3321,
+                        y: -4.08351,
+                        z: 0.0,
+                    },
+                    orientation: Quaternion {
+                        x: 0.0,
+                        y: 0.0,
+                        z: 0.00369801,
+                        w: 0.999993,
+                    },
+                },
+                5 => Pose {
+                    position: Point {
+                        x: -30.5858,
+                        y: -1.69124,
+                        z: 0.0,
+                    },
+                    orientation: Quaternion {
+                        x: 0.0,
+                        y: 0.0,
+                        z: -0.0399045,
+                        w: 0.999203,
+                    },
+                },
+                6 => Pose {
+                    position: Point {
+                        x: 68.7716,
+                        y: 1.69563,
+                        z: 0.0,
+                    },
+                    orientation: Quaternion {
+                        x: 0.0,
+                        y: 0.0,
+                        z: -0.0553005,
+                        w: 0.99847,
+                    },
+                },
+                7 => Pose {
+                    position: Point {
+                        x: 102.207,
+                        y: 1.47179,
+                        z: 0.0,
+                    },
+                    orientation: Quaternion {
+                        x: 0.0,
+                        y: 0.0,
+                        z: -0.184385,
+                        w: 0.982854,
+                    },
+                },
+                8 => Pose {
+                    position: Point {
+                        x: 112.422,
+                        y: 8.01776,
+                        z: 0.0,
+                    },
+                    orientation: Quaternion {
+                        x: 0.0,
+                        y: 0.0,
+                        z: -0.998625,
+                        w: 0.052414,
+                    },
+                },
+                _ => panic!("Invalid location"),
+            };
+            let des_location = match des_location {
+                1 => Pose {
+                    position: Point {
+                        x: 66.7734,
+                        y: 3.68743,
+                        z: 0.0,
+                    },
+                    orientation: Quaternion {
+                        x: 0.0,
+                        y: 0.0,
+                        z: 0.996593,
+                        w: 0.0824797,
+                    },
+                },
+                2 => Pose {
+                    position: Point {
+                        x: -27.1465,
+                        y: 2.29813,
+                        z: 0.0,
+                    },
+                    orientation: Quaternion {
+                        x: 0.0,
+                        y: 0.0,
+                        z: -0.999136,
+                        w: 0.0415587,
+                    },
+                },
+                3 => Pose {
+                    position: Point {
+                        x: -80.6396,
+                        y: -0.649459,
+                        z: 0.0,
+                    },
+                    orientation: Quaternion {
+                        x: 0.0,
+                        y: 0.0,
+                        z: -0.999273,
+                        w: 0.0381171,
+                    },
+                },
+                4 => Pose {
+                    position: Point {
+                        x: -86.3321,
+                        y: -4.08351,
+                        z: 0.0,
+                    },
+                    orientation: Quaternion {
+                        x: 0.0,
+                        y: 0.0,
+                        z: 0.00369801,
+                        w: 0.999993,
+                    },
+                },
+                5 => Pose {
+                    position: Point {
+                        x: -30.5858,
+                        y: -1.69124,
+                        z: 0.0,
+                    },
+                    orientation: Quaternion {
+                        x: 0.0,
+                        y: 0.0,
+                        z: -0.0399045,
+                        w: 0.999203,
+                    },
+                },
+                6 => Pose {
+                    position: Point {
+                        x: 68.7716,
+                        y: 1.69563,
+                        z: 0.0,
+                    },
+                    orientation: Quaternion {
+                        x: 0.0,
+                        y: 0.0,
+                        z: -0.0553005,
+                        w: 0.99847,
+                    },
+                },
+                7 => Pose {
+                    position: Point {
+                        x: 102.207,
+                        y: 1.47179,
+                        z: 0.0,
+                    },
+                    orientation: Quaternion {
+                        x: 0.0,
+                        y: 0.0,
+                        z: -0.184385,
+                        w: 0.982854,
+                    },
+                },
+                8 => Pose {
+                    position: Point {
+                        x: 112.422,
+                        y: 8.01776,
+                        z: 0.0,
+                    },
+                    orientation: Quaternion {
+                        x: 0.0,
+                        y: 0.0,
+                        z: -0.998625,
+                        w: 0.052414,
+                    },
+                },
+                _ => panic!("Invalid location"),
+            };
             break CallTaxi {
                 task_id,
                 cur_location,
@@ -78,7 +291,7 @@ Enter ([y]/n):",
     Ok(())
 }
 
-fn read_position(prompt: &str) -> Result<LatLon, Error> {
+fn read_position(prompt: &str) -> Result<i32, Error> {
     // The loop runs until user gives a valid lat/lon position.
     loop {
         macro_rules! bail {
@@ -93,15 +306,13 @@ fn read_position(prompt: &str) -> Result<LatLon, Error> {
 
         // Check if it has two tokens, lat and lon string each.
         let tokens: Vec<_> = text.split_ascii_whitespace().collect();
-        let [lat, lon] = tokens.as_slice() else {
+        let [lat] = tokens.as_slice() else {
             bail!();
         };
 
         // Parse the tokens to floats.
-        let (Ok(lat), Ok(lon)) = (lat.parse(), lon.parse()) else {
-            bail!()
-        };
+        let Ok(location) = lat.parse() else { bail!() };
 
-        return Ok(LatLon { lon, lat });
+        return Ok(location);
     }
 }
