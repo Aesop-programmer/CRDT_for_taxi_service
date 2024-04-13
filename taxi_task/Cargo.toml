@@ -6,9 +6,11 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+anyhow = { version = "1.0.82", features = ["backtrace"] }
 clap = { version = "4.5.4", features = ["derive"] }
 futures = "0.3.30"
 inquire = "0.7.4"
+itertools = "0.12.1"
 r2r = "0.8.4"
 rand = { version = "0.8.5", features = ["getrandom"] }
 serde = "1.0.197"
