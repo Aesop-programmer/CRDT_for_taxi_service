@@ -234,7 +234,7 @@ async fn listen_task(
             }
         }
 
-        tokio::time::sleep(Duration::from_millis(5000)).await;
+        tokio::time::sleep(Duration::from_millis(1000)).await;
 
         {
             let guard_vehicle = vehicle_state.lock().await;
@@ -248,12 +248,14 @@ async fn listen_task(
         let msg = ChangeOperationMode::Request {};
         let req = change_to_stop.request(&msg)?;
         let _res = req.await?;
+        eprintln!("{_res:#?}");
+
 
         // clear route
         let msg = ClearRoute::Request {};
         let req = clear_route.request(&msg)?;
         let _res = req.await?;
-
+        eprintln!("{_res:#?}");
         // set route
 
         let msg = SetRoutePoints::Request {
@@ -266,12 +268,12 @@ async fn listen_task(
         };
         let req = set_route.request(&msg)?;
         let _res = req.await?;
-
+        eprintln!("{_res:#?}");
         // start auto mode
         let msg = ChangeOperationMode::Request {};
         let req = change_to_auto.request(&msg)?;
         let _res = req.await?;
-
+        eprintln!("{_res:#?}");
         // ////// arrive client current location, wait for client to type enter
         Text::new(&format!("Press [ENTER] to continue task.\n")).prompt()?;
         Text::new(&format!("Press [ENTER] to confirm.\n")).prompt()?;
@@ -280,12 +282,12 @@ async fn listen_task(
         let msg = ChangeOperationMode::Request {};
         let req = change_to_stop.request(&msg)?;
         let _res = req.await?;
-
+        eprintln!("{_res:#?}");
         // clear route
         let msg = ClearRoute::Request {};
         let req = clear_route.request(&msg)?;
         let _res = req.await?;
-
+        eprintln!("{_res:#?}");
         let msg = SetRoutePoints::Request {
             header: Header {
                 stamp: Clock::to_builtin_time(&clock.get_now()?),
@@ -297,11 +299,12 @@ async fn listen_task(
 
         let req = set_route.request(&msg)?;
         let _res = req.await?;
-
+        eprintln!("{_res:#?}");
         // start auto mode
         let msg = ChangeOperationMode::Request {};
         let req = change_to_auto.request(&msg)?;
         let _res = req.await?;
+        eprintln!("{_res:#?}");
     }
 }
 
