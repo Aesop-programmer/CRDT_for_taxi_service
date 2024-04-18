@@ -176,7 +176,7 @@ impl AutowareApiClient {
                 },
                 pose: PoseWithCovariance {
                     pose: goal,
-                    covariance: vec![0.0],
+                    covariance: vec![0.0;36],
                 },
             }],
         };
