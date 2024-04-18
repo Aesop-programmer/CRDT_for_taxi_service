@@ -199,7 +199,7 @@ async fn listen_task(
 ) -> Result<(), Error> {
     let subscriber = session.declare_subscriber("rsu/task_assign").res().await?;
     let publisher = session.declare_publisher("task_request").res().await?;
-    let mut clock = Clock::create(ClockType::RosTime)?;
+    let mut clock: Clock = Clock::create(ClockType::RosTime)?;
     loop {
         let task: Task = {
             let sample = subscriber.recv_async().await?;
@@ -249,7 +249,6 @@ async fn listen_task(
         let req = change_to_stop.request(&msg)?;
         let _res = req.await?;
         eprintln!("{_res:#?}");
-
 
         // clear route
         let msg = ClearRoute::Request {};

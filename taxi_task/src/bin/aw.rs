@@ -1,4 +1,4 @@
-use anyhow::{bail, ensure, Result};
+use anyhow::{bail, ensure, Ok, Result};
 use clap::Parser;
 use futures::{self, FutureExt, Stream, StreamExt};
 use inquire::Text;
@@ -6,9 +6,9 @@ use itertools::{chain, Itertools};
 use r2r::{
     autoware_adapi_v1_msgs::{
         msg::RouteState,
-        srv::{ChangeOperationMode, ClearRoute, SetRoutePoints},
+        srv::{ChangeOperationMode, ClearRoute, InitializeLocalization, SetRoutePoints},
     },
-    geometry_msgs::msg::{Point, Pose, Quaternion},
+    geometry_msgs::msg::{Point, Pose, PoseWithCovariance, PoseWithCovarianceStamped, Quaternion},
     std_msgs::msg::Header,
     Client, Clock, ClockType, QosProfile,
 };
@@ -37,6 +37,7 @@ struct Args {
 
 #[derive(Debug, Parser)]
 enum Command {
+    Init,
     Stop,
     SetGoal,
     SetRoute,
@@ -50,6 +51,7 @@ struct AutowareApiClient {
     clear_route: Client<ClearRoute::Service>,
     change_to_stop: Client<ChangeOperationMode::Service>,
     change_to_auto: Client<ChangeOperationMode::Service>,
+    set_init: Client<InitializeLocalization::Service>,
 }
 
 struct AutowareApiSubscribers {
@@ -110,6 +112,7 @@ impl AutowareApiClient {
             clear_route,
             change_to_stop,
             change_to_auto,
+            set_init,
         } = self;
 
         // stop car
@@ -158,6 +161,33 @@ impl AutowareApiClient {
 
         Ok(())
     }
+
+    async fn set_init(
+        &mut self,
+        goal: Pose,
+        waypoints: Vec<Pose>,
+        clock: &mut Clock,
+    ) -> Result<()> {
+        let msg = InitializeLocalization::Request {
+            pose: vec![PoseWithCovarianceStamped {
+                header: Header {
+                    stamp: Clock::to_builtin_time(&clock.get_now()?),
+                    frame_id: "map".to_string(),
+                },
+                pose: PoseWithCovariance {
+                    pose: goal,
+                    covariance: vec![0.0],
+                },
+            }],
+        };
+        let req = self.set_init.request(&msg)?;
+        let res = req.await?;
+        eprintln!("{res:#?}");
+        if !res.status.success {
+            return Ok(());
+        }
+        Ok(())
+    }
 }
 
 #[tokio::main]
@@ -183,6 +213,8 @@ async fn main() -> Result<()> {
         change_to_auto: node.create_client::<ChangeOperationMode::Service>(
             "/api/operation_mode/change_to_autonomous",
         )?,
+        set_init: node
+            .create_client::<InitializeLocalization::Service>("/api/localization/initialize")?,
     };
 
     let input_task = spawn!(shell(client, clock));
@@ -237,6 +269,11 @@ async fn shell(mut client: AutowareApiClient, mut clock: Clock) -> Result<()> {
             }
             Command::Stop => {
                 let res = client.stop().await?;
+                println!("{res:#?}");
+            }
+            Command::Init => {
+                let (goal, waypoints) = ask_goal()?;
+                let res = client.set_init(goal, waypoints, &mut clock).await?;
                 println!("{res:#?}");
             }
             Command::Exit => break,
