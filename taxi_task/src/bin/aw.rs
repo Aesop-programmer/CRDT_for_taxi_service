@@ -1,4 +1,4 @@
-use anyhow::{bail, ensure, Ok, Result};
+use anyhow::{bail, ensure, Result};
 use clap::Parser;
 use futures::{self, FutureExt, Stream, StreamExt};
 use inquire::Text;
