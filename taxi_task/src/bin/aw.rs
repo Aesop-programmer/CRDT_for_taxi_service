@@ -10,7 +10,7 @@ use r2r::{
     },
     geometry_msgs::msg::{Point, Pose, PoseWithCovariance, PoseWithCovarianceStamped, Quaternion},
     std_msgs::msg::Header,
-    Client, Clock, ClockType, QosProfile,
+    Client, Clock, ClockType, QosProfile,Publisher, qos,
 };
 use std::{fmt::Debug, path::PathBuf, pin::Pin, thread, time::Duration};
 
@@ -37,6 +37,7 @@ struct Args {
 
 #[derive(Debug, Parser)]
 enum Command {
+    Publish,
     Init,
     Stop,
     SetGoal,
@@ -52,6 +53,7 @@ struct AutowareApiClient {
     change_to_stop: Client<ChangeOperationMode::Service>,
     change_to_auto: Client<ChangeOperationMode::Service>,
     set_init: Client<InitializeLocalization::Service>,
+    publsih_to_pose3d: Publisher<r2r::geometry_msgs::msg::PoseWithCovarianceStamped>,
 }
 
 struct AutowareApiSubscribers {
@@ -113,6 +115,7 @@ impl AutowareApiClient {
             change_to_stop,
             change_to_auto,
             set_init,
+            publsih_to_pose3d,
         } = self;
 
         // stop car
@@ -188,6 +191,25 @@ impl AutowareApiClient {
         }
         Ok(())
     }
+
+    async fn publish(&mut self,
+        goal: Pose,
+        waypoints: Vec<Pose>,
+        clock: &mut Clock,
+    ) -> Result<()> {
+        let msg = PoseWithCovarianceStamped {
+            header: Header {
+                stamp: Clock::to_builtin_time(&clock.get_now()?),
+                frame_id: "map".to_string(),
+            },
+            pose: PoseWithCovariance {
+                pose: goal,
+                covariance: vec![0.0;36],
+            },
+        };
+        self.publsih_to_pose3d.publish(&msg)?;
+        Ok(())
+    }
 }
 
 #[tokio::main]
@@ -215,6 +237,7 @@ async fn main() -> Result<()> {
         )?,
         set_init: node
             .create_client::<InitializeLocalization::Service>("/api/localization/initialize")?,
+        publsih_to_pose3d: node.create_publisher("/initialpose3d", QosProfile::default())?,
     };
 
     let input_task = spawn!(shell(client, clock));
@@ -276,6 +299,11 @@ async fn shell(mut client: AutowareApiClient, mut clock: Clock) -> Result<()> {
                 let res = client.set_init(goal, waypoints, &mut clock).await?;
                 println!("{res:#?}");
             }
+            Command::Publish =>{
+                let (goal, waypoints) = ask_goal()?;
+                let res = client.publish(goal, waypoints, &mut clock).await?;
+                println!("{res:#?}");
+            }   
             Command::Exit => break,
         }
 
