@@ -5,7 +5,7 @@ use r2r::{
     autoware_adapi_v1_msgs::srv::{ChangeOperationMode, ClearRoute, SetRoutePoints},
     geometry_msgs::{
         self,
-        msg::{Point, Pose, PoseWithCovariance, Quaternion},
+        msg::{Point, Pose, PoseWithCovariance, Quaternion, PoseWithCovarianceStamped},
     },
     rosapi_msgs::srv::Subscribers,
     std_msgs::msg::Header,
@@ -281,7 +281,7 @@ async fn listen_task(
     let mut ctx = r2r::Context::create()?;
     let mut node = r2r::Node::create(ctx.clone(), "listen", "")?;
     let mut listen_state = node
-        .subscribe::<geometry_msgs::msg::PoseWithCovariance>(
+        .subscribe::<geometry_msgs::msg::PoseWithCovarianceStamped>(
             "/sensing/gnss/pose_with_covariance",
             QosProfile::default(),
         )
@@ -493,19 +493,20 @@ fn distance(src: &Point, dst: &Point) -> f64 {
 }
 
 async fn go_to(
-    mut subscriber: impl Stream<Item = PoseWithCovariance> + Unpin,
+    mut subscriber: impl Stream<Item = PoseWithCovarianceStamped> + Unpin,
     goal: Pose,
     delta: f64,
     mode: u32,
 ) {
     if mode == 1 {
         while let Some(msg) = subscriber.next().await {
-            let PoseWithCovariance {
-                pose: Pose {
-                    position: cur_pose, ..
+            let PoseWithCovarianceStamped {
+                pose: PoseWithCovariance{
+                    pose: cur_pose, ..
                 },
                 ..
             } = msg;
+            let cur_pose = cur_pose.position;
             let pickup_pose = goal.position.clone();
             let dist = distance(&cur_pose, &pickup_pose);
             eprintln!("Distance to goal: {}", dist);
