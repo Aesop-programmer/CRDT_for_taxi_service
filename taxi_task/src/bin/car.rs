@@ -442,6 +442,8 @@ async fn listen_task(
         let req = change_to_stop.request(&msg)?;
         let _res = req.await?;
         eprintln!("{_res:#?}");
+
+        println!("Task {} completed", task.task_id);
     }
 }
 
