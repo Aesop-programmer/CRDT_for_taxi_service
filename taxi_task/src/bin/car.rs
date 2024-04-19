@@ -1,24 +1,29 @@
 use clap::Parser;
-use futures::{self, FutureExt, StreamExt, Stream};
+use futures::{self, FutureExt, Stream, StreamExt};
 use inquire::Text;
 use r2r::{
     autoware_adapi_v1_msgs::srv::{ChangeOperationMode, ClearRoute, SetRoutePoints},
-    geometry_msgs::{msg::{Point, Pose, Quaternion, PoseWithCovariance}, self},
+    geometry_msgs::{
+        self,
+        msg::{Point, Pose, PoseWithCovariance, Quaternion},
+    },
+    rosapi_msgs::srv::Subscribers,
     std_msgs::msg::Header,
-    Client, Clock, ClockType, QosProfile, rosapi_msgs::srv::Subscribers,
+    Client, Clock, ClockType, QosProfile,
 };
 use rand::{prelude::*, rngs::OsRng};
 use std::{
+    f64,
+    ops::Sub,
     path::PathBuf,
     sync::Arc,
     thread,
-    time::{Duration, SystemTime}, ops::Sub, f64,
+    time::{Duration, SystemTime},
 };
 use taxi_task::{InfoTable, RequireTask, Task, VehicleState};
 use tokio::sync::{Mutex, Notify};
 use unix_ts::Timestamp;
-use zenoh::{prelude::r#async::*,};
-
+use zenoh::prelude::r#async::*;
 
 type Error = Box<dyn std::error::Error + Sync + Send>;
 
@@ -61,6 +66,15 @@ async fn main() -> Result<(), Error> {
         Text::new("Press [ENTER] to login your car id.\n").prompt()?;
         let car_id = read_car_id("your car id:")?;
         break car_id;
+    };
+    let mode = loop {
+        Text::new("Press [ENTER] to set your car mode.\n").prompt()?;
+        let temp = read_mode("setting car mode")?;
+        if temp != 1 && temp != 2 {
+            eprintln!("incorrect mode");
+            continue;
+        }
+        break temp;
     };
 
     let delta = loop {
@@ -109,6 +123,7 @@ async fn main() -> Result<(), Error> {
             change_to_stop,
             change_to_auto,
             delta,
+            mode,
         )),
         printer(notify.clone(), info_table.clone(), vehicle_state.clone(),),
         spin_task,
@@ -169,6 +184,31 @@ fn read_delta_dis(prompt: &str) -> Result<f64, Error> {
     }
 }
 
+fn read_mode(prompt: &str) -> Result<u32, Error> {
+    // The loop runs until user gives a valid lat/lon position.
+    loop {
+        macro_rules! bail {
+            () => {{
+                eprintln!("incorrect mode");
+                continue;
+            }};
+        }
+
+        // Get user input.
+        let text = Text::new(prompt).prompt()?;
+
+        // Check if it has one tokens,
+        let tokens: Vec<_> = text.split_ascii_whitespace().collect();
+        let [car] = tokens.as_slice() else {
+            bail!();
+        };
+
+        // Parse the tokens to floats.
+        let Ok(car_id) = car.parse() else { bail!() };
+
+        return Ok(car_id);
+    }
+}
 
 async fn merge_task(
     notify: Arc<Notify>,
@@ -232,6 +272,7 @@ async fn listen_task(
     change_to_stop: Client<ChangeOperationMode::Service>,
     change_to_auto: Client<ChangeOperationMode::Service>,
     delta: f64,
+    mode: u32,
 ) -> Result<(), Error> {
     let subscriber = session.declare_subscriber("rsu/task_assign").res().await?;
     let publisher = session.declare_publisher("task_request").res().await?;
@@ -239,7 +280,12 @@ async fn listen_task(
 
     let mut ctx = r2r::Context::create()?;
     let mut node = r2r::Node::create(ctx.clone(), "listen", "")?;
-    let mut listen_state = node.subscribe::<geometry_msgs::msg::PoseWithCovariance>("/sensing/gnss/pose_with_covariance", QosProfile::default()).unwrap();
+    let mut listen_state = node
+        .subscribe::<geometry_msgs::msg::PoseWithCovariance>(
+            "/sensing/gnss/pose_with_covariance",
+            QosProfile::default(),
+        )
+        .unwrap();
 
     loop {
         let task: Task = {
@@ -315,7 +361,6 @@ async fn listen_task(
         // let _res = req.await?;
         // eprintln!("{_res:#?}");
 
-
         /////////////備案
 
         // stop car
@@ -330,7 +375,7 @@ async fn listen_task(
         let _res = req.await?;
         eprintln!("{_res:#?}");
 
-        go_to(&mut listen_state, task.cur_location,delta).await;
+        go_to(&mut listen_state, task.cur_location, delta, mode).await;
 
         // stop car
         let msg = ChangeOperationMode::Request {};
@@ -372,7 +417,7 @@ async fn listen_task(
         // eprintln!("{_res:#?}");
 
         //備案
-        
+
         // stop car
         let msg = ChangeOperationMode::Request {};
         let req = change_to_stop.request(&msg)?;
@@ -390,7 +435,7 @@ async fn listen_task(
         //     抵達後break
         // }
 
-        go_to(&mut listen_state, task.des_location,delta).await;
+        go_to(&mut listen_state, task.des_location, delta, mode).await;
 
         // stop car
         let msg = ChangeOperationMode::Request {};
@@ -432,20 +477,42 @@ async fn printer(
 }
 
 fn distance(src: &Point, dst: &Point) -> f64 {
-    let Point { x: sx, y: sy, z : sz} = *src;
-    let Point { x: tx, y:ty, z: tz } = *dst;
+    let Point {
+        x: sx,
+        y: sy,
+        z: sz,
+    } = *src;
+    let Point {
+        x: tx,
+        y: ty,
+        z: tz,
+    } = *dst;
     ((sx - tx).powi(2) + (sy - ty).powi(2) + (sz - tz).powi(2)).sqrt()
 }
 
-async fn go_to(mut subscriber: impl Stream<Item = PoseWithCovariance> + Unpin, goal: Pose ,delta: f64) {
-    while let Some(msg) = subscriber.next().await {
-        let PoseWithCovariance { pose: Pose { position: cur_pose, .. }, .. } = msg;
-        let pickup_pose = goal.position.clone();
-        let dist = distance(&cur_pose, &pickup_pose);
+async fn go_to(
+    mut subscriber: impl Stream<Item = PoseWithCovariance> + Unpin,
+    goal: Pose,
+    delta: f64,
+    mode: u32,
+) {
+    if mode == 1 {
+        while let Some(msg) = subscriber.next().await {
+            let PoseWithCovariance {
+                pose: Pose {
+                    position: cur_pose, ..
+                },
+                ..
+            } = msg;
+            let pickup_pose = goal.position.clone();
+            let dist = distance(&cur_pose, &pickup_pose);
 
-        if dist <= delta {
-            break;
+            if dist <= delta {
+                break;
+            }
         }
     }
-    
+    else {
+        tokio::time::sleep(Duration::from_secs_f64(delta)).await;
+    }
 }
