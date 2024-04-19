@@ -489,7 +489,7 @@ fn distance(src: &Point, dst: &Point) -> f64 {
         y: ty,
         z: tz,
     } = *dst;
-    ((sx - tx).powi(2) + (sy - ty).powi(2) + (sz - tz).powi(2)).sqrt()
+    ((sx - tx).powi(2) + (sy - ty).powi(2) ).sqrt()
 }
 
 async fn go_to(
