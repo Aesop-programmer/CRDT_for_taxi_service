@@ -5,7 +5,7 @@ use r2r::{
     autoware_adapi_v1_msgs::srv::{ChangeOperationMode, ClearRoute, SetRoutePoints},
     geometry_msgs::{
         self,
-        msg::{Point, Pose, PoseWithCovariance, Quaternion, PoseWithCovarianceStamped},
+        msg::{Point, Pose, PoseWithCovariance, PoseWithCovarianceStamped, Quaternion},
     },
     rosapi_msgs::srv::Subscribers,
     std_msgs::msg::Header,
@@ -280,10 +280,12 @@ async fn listen_task(
 
     let mut ctx = r2r::Context::create()?;
     let mut node = r2r::Node::create(ctx.clone(), "listen", "")?;
+    let mut qos = QosProfile::default();
+    let qos = qos.keep_last(10);
     let mut listen_state = node
         .subscribe::<geometry_msgs::msg::PoseWithCovarianceStamped>(
             "/sensing/gnss/pose_with_covariance",
-            QosProfile::default(),
+            qos,
         )
         .unwrap();
 
@@ -501,9 +503,7 @@ async fn go_to(
     if mode == 1 {
         while let Some(msg) = subscriber.next().await {
             let PoseWithCovarianceStamped {
-                pose: PoseWithCovariance{
-                    pose: cur_pose, ..
-                },
+                pose: PoseWithCovariance { pose: cur_pose, .. },
                 ..
             } = msg;
             let cur_pose = cur_pose.position;
