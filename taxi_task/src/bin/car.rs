@@ -243,6 +243,39 @@ async fn listen_task(
             }
             println!("Execute task {}", guard_vehicle.assigned_task.unwrap());
         }
+        /////////////原計畫
+        // // stop car
+        // let msg = ChangeOperationMode::Request {};
+        // let req = change_to_stop.request(&msg)?;
+        // let _res = req.await?;
+        // eprintln!("{_res:#?}");
+
+        // // clear route
+        // let msg = ClearRoute::Request {};
+        // let req = clear_route.request(&msg)?;
+        // let _res = req.await?;
+        // eprintln!("{_res:#?}");
+        // // set route
+
+        // let msg = SetRoutePoints::Request {
+        //     header: Header {
+        //         stamp: Clock::to_builtin_time(&clock.get_now()?),
+        //         frame_id: "map".to_string(),
+        //     },
+        //     goal: task.cur_location.clone(),
+        //     ..SetRoutePoints::Request::default()
+        // };
+        // let req = set_route.request(&msg)?;
+        // let _res = req.await?;
+        // eprintln!("{_res:#?}");
+        // // start auto mode
+        // let msg = ChangeOperationMode::Request {};
+        // let req = change_to_auto.request(&msg)?;
+        // let _res = req.await?;
+        // eprintln!("{_res:#?}");
+
+
+        /////////////備案
 
         // stop car
         let msg = ChangeOperationMode::Request {};
@@ -250,58 +283,78 @@ async fn listen_task(
         let _res = req.await?;
         eprintln!("{_res:#?}");
 
-        // clear route
-        let msg = ClearRoute::Request {};
-        let req = clear_route.request(&msg)?;
-        let _res = req.await?;
-        eprintln!("{_res:#?}");
-        // set route
-
-        let msg = SetRoutePoints::Request {
-            header: Header {
-                stamp: Clock::to_builtin_time(&clock.get_now()?),
-                frame_id: "map".to_string(),
-            },
-            goal: task.cur_location.clone(),
-            ..SetRoutePoints::Request::default()
-        };
-        let req = set_route.request(&msg)?;
-        let _res = req.await?;
-        eprintln!("{_res:#?}");
         // start auto mode
         let msg = ChangeOperationMode::Request {};
         let req = change_to_auto.request(&msg)?;
         let _res = req.await?;
         eprintln!("{_res:#?}");
+
+        // loop {
+        //     去聽目前的位置與目標位置的比較
+        //     抵達後break
+        // }
+
+        // stop car
+        let msg = ChangeOperationMode::Request {};
+        let req = change_to_stop.request(&msg)?;
+        let _res = req.await?;
+        eprintln!("{_res:#?}");
+
         // ////// arrive client current location, wait for client to type enter
         Text::new(&format!("Press [ENTER] to continue task.\n")).prompt()?;
         Text::new(&format!("Press [ENTER] to confirm.\n")).prompt()?;
 
+        // ////原案
+        // // stop car
+        // let msg = ChangeOperationMode::Request {};
+        // let req = change_to_stop.request(&msg)?;
+        // let _res = req.await?;
+        // eprintln!("{_res:#?}");
+        // // clear route
+        // let msg = ClearRoute::Request {};
+        // let req = clear_route.request(&msg)?;
+        // let _res = req.await?;
+        // eprintln!("{_res:#?}");
+        // let msg = SetRoutePoints::Request {
+        //     header: Header {
+        //         stamp: Clock::to_builtin_time(&clock.get_now()?),
+        //         frame_id: "map".to_string(),
+        //     },
+        //     goal: task.des_location.clone(),
+        //     ..SetRoutePoints::Request::default()
+        // };
+
+        // let req = set_route.request(&msg)?;
+        // let _res = req.await?;
+        // eprintln!("{_res:#?}");
+        // // start auto mode
+        // let msg = ChangeOperationMode::Request {};
+        // let req = change_to_auto.request(&msg)?;
+        // let _res = req.await?;
+        // eprintln!("{_res:#?}");
+
+        //備案
+        
         // stop car
         let msg = ChangeOperationMode::Request {};
         let req = change_to_stop.request(&msg)?;
         let _res = req.await?;
         eprintln!("{_res:#?}");
-        // clear route
-        let msg = ClearRoute::Request {};
-        let req = clear_route.request(&msg)?;
-        let _res = req.await?;
-        eprintln!("{_res:#?}");
-        let msg = SetRoutePoints::Request {
-            header: Header {
-                stamp: Clock::to_builtin_time(&clock.get_now()?),
-                frame_id: "map".to_string(),
-            },
-            goal: task.des_location.clone(),
-            ..SetRoutePoints::Request::default()
-        };
 
-        let req = set_route.request(&msg)?;
-        let _res = req.await?;
-        eprintln!("{_res:#?}");
         // start auto mode
         let msg = ChangeOperationMode::Request {};
         let req = change_to_auto.request(&msg)?;
+        let _res = req.await?;
+        eprintln!("{_res:#?}");
+
+        // loop {
+        //     去聽目前的位置與目標位置的比較
+        //     抵達後break
+        // }
+
+        // stop car
+        let msg = ChangeOperationMode::Request {};
+        let req = change_to_stop.request(&msg)?;
         let _res = req.await?;
         eprintln!("{_res:#?}");
     }
