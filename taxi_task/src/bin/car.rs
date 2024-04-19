@@ -508,7 +508,7 @@ async fn go_to(
             } = msg;
             let pickup_pose = goal.position.clone();
             let dist = distance(&cur_pose, &pickup_pose);
-
+            eprintln!("Distance to goal: {}", dist);
             if dist <= delta {
                 break;
             }
