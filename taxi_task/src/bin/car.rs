@@ -97,6 +97,13 @@ async fn main() -> Result<(), Error> {
             tokio::task::spawn_blocking($func).map(|result| -> Result<_, Error> { result? })
         }};
     }
+    let qos = QosProfile::default().keep_last(10);
+    let mut listen_state = node
+        .subscribe::<geometry_msgs::msg::PoseWithCovarianceStamped>(
+            "/sensing/gnss/pose_with_covariance",
+            qos,
+        )
+        .unwrap();
 
     let spin_task = spawn_blocking!(move || -> Result<(), Error> {
         loop {
@@ -124,6 +131,7 @@ async fn main() -> Result<(), Error> {
             change_to_auto,
             delta,
             mode,
+            listen_state,
         )),
         printer(notify.clone(), info_table.clone(), vehicle_state.clone(),),
         spin_task,
@@ -273,22 +281,14 @@ async fn listen_task(
     change_to_auto: Client<ChangeOperationMode::Service>,
     delta: f64,
     mode: u32,
+    mut listen_state: impl Stream<Item = PoseWithCovarianceStamped> + Unpin,
 ) -> Result<(), Error> {
     let subscriber = session.declare_subscriber("rsu/task_assign").res().await?;
     let publisher = session.declare_publisher("task_request").res().await?;
     let mut clock: Clock = Clock::create(ClockType::RosTime)?;
 
-    let mut ctx = r2r::Context::create()?;
-    let mut node = r2r::Node::create(ctx.clone(), "listen", "")?;
-    let mut qos = QosProfile::default();
-    let qos = qos.keep_last(10);
-    let mut listen_state = node
-        .subscribe::<geometry_msgs::msg::PoseWithCovarianceStamped>(
-            "/sensing/gnss/pose_with_covariance",
-            qos,
-        )
-        .unwrap();
-
+    
+    
     loop {
         let task: Task = {
             let sample = subscriber.recv_async().await?;
