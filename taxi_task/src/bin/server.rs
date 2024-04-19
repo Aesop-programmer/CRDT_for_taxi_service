@@ -31,7 +31,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .unwrap();
 
-    let gear_publisher = node.create_publisher::<r2r::autoware_auto_vehicle_msgs::msg::GearCommand>("/control/command/gear_cmd", QosProfile::default()).unwrap();
+    let gear_publisher = node
+        .create_publisher::<r2r::autoware_auto_vehicle_msgs::msg::GearCommand>(
+            "/control/command/gear_cmd",
+            QosProfile::default(),
+        )
+        .unwrap();
     let mut clock = Clock::create(ClockType::RosTime)?;
 
     let is_stopped = Arc::new(AtomicBool::new(true));
@@ -62,9 +67,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         });
     }
 
-
-
-
     {
         let is_stopped = is_stopped.clone();
         rt.spawn(async move {
@@ -88,10 +90,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
         });
-
     }
-
-
 
     rt.spawn(async move {
         loop {

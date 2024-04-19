@@ -9,8 +9,9 @@ use r2r::{
         srv::{ChangeOperationMode, ClearRoute, InitializeLocalization, SetRoutePoints},
     },
     geometry_msgs::msg::{Point, Pose, PoseWithCovariance, PoseWithCovarianceStamped, Quaternion},
+    qos,
     std_msgs::msg::Header,
-    Client, Clock, ClockType, QosProfile,Publisher, qos,
+    Client, Clock, ClockType, Publisher, QosProfile,
 };
 use std::{fmt::Debug, path::PathBuf, pin::Pin, thread, time::Duration};
 
@@ -179,7 +180,7 @@ impl AutowareApiClient {
                 },
                 pose: PoseWithCovariance {
                     pose: goal,
-                    covariance: vec![0.0;36],
+                    covariance: vec![0.0; 36],
                 },
             }],
         };
@@ -192,11 +193,7 @@ impl AutowareApiClient {
         Ok(())
     }
 
-    async fn publish(&mut self,
-        goal: Pose,
-        waypoints: Vec<Pose>,
-        clock: &mut Clock,
-    ) -> Result<()> {
+    async fn publish(&mut self, goal: Pose, waypoints: Vec<Pose>, clock: &mut Clock) -> Result<()> {
         let msg = PoseWithCovarianceStamped {
             header: Header {
                 stamp: Clock::to_builtin_time(&clock.get_now()?),
@@ -204,7 +201,7 @@ impl AutowareApiClient {
             },
             pose: PoseWithCovariance {
                 pose: goal,
-                covariance: vec![0.0;36],
+                covariance: vec![0.0; 36],
             },
         };
         self.publsih_to_pose3d.publish(&msg)?;
@@ -299,11 +296,11 @@ async fn shell(mut client: AutowareApiClient, mut clock: Clock) -> Result<()> {
                 let res = client.set_init(goal, waypoints, &mut clock).await?;
                 println!("{res:#?}");
             }
-            Command::Publish =>{
+            Command::Publish => {
                 let (goal, waypoints) = ask_goal()?;
                 let res = client.publish(goal, waypoints, &mut clock).await?;
                 println!("{res:#?}");
-            }   
+            }
             Command::Exit => break,
         }
 

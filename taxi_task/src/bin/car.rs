@@ -1,23 +1,24 @@
 use clap::Parser;
-use futures::{self, FutureExt};
+use futures::{self, FutureExt, StreamExt, Stream};
 use inquire::Text;
 use r2r::{
     autoware_adapi_v1_msgs::srv::{ChangeOperationMode, ClearRoute, SetRoutePoints},
-    geometry_msgs::msg::{Point, Pose, Quaternion},
+    geometry_msgs::{msg::{Point, Pose, Quaternion, PoseWithCovariance}, self},
     std_msgs::msg::Header,
-    Client, Clock, ClockType, QosProfile,
+    Client, Clock, ClockType, QosProfile, rosapi_msgs::srv::Subscribers,
 };
 use rand::{prelude::*, rngs::OsRng};
 use std::{
     path::PathBuf,
     sync::Arc,
     thread,
-    time::{Duration, SystemTime},
+    time::{Duration, SystemTime}, ops::Sub, f64,
 };
 use taxi_task::{InfoTable, RequireTask, Task, VehicleState};
 use tokio::sync::{Mutex, Notify};
 use unix_ts::Timestamp;
-use zenoh::prelude::r#async::*;
+use zenoh::{prelude::r#async::*,};
+
 
 type Error = Box<dyn std::error::Error + Sync + Send>;
 
@@ -62,6 +63,12 @@ async fn main() -> Result<(), Error> {
         break car_id;
     };
 
+    let delta = loop {
+        Text::new("Press [ENTER] to set delta number.\n").prompt()?;
+        let dis = read_delta_dis("setting delta number:")?;
+        break dis;
+    };
+
     let vehicle_state = Arc::new(Mutex::new(VehicleState::new(request)));
     let info_table = Arc::new(Mutex::new(InfoTable::new()));
     let notify = Arc::new(Notify::new());
@@ -100,7 +107,8 @@ async fn main() -> Result<(), Error> {
             set_route_points,
             clear_route,
             change_to_stop,
-            change_to_auto
+            change_to_auto,
+            delta,
         )),
         printer(notify.clone(), info_table.clone(), vehicle_state.clone(),),
         spin_task,
@@ -134,6 +142,33 @@ fn read_car_id(prompt: &str) -> Result<u32, Error> {
         return Ok(car_id);
     }
 }
+
+fn read_delta_dis(prompt: &str) -> Result<f64, Error> {
+    // The loop runs until user gives a valid lat/lon position.
+    loop {
+        macro_rules! bail {
+            () => {{
+                eprintln!("incorrect delta number");
+                continue;
+            }};
+        }
+
+        // Get user input.
+        let text = Text::new(prompt).prompt()?;
+
+        // Check if it has one tokens,
+        let tokens: Vec<_> = text.split_ascii_whitespace().collect();
+        let [car] = tokens.as_slice() else {
+            bail!();
+        };
+
+        // Parse the tokens to floats.
+        let Ok(car_id) = car.parse() else { bail!() };
+
+        return Ok(car_id);
+    }
+}
+
 
 async fn merge_task(
     notify: Arc<Notify>,
@@ -196,10 +231,16 @@ async fn listen_task(
     clear_route: Client<ClearRoute::Service>,
     change_to_stop: Client<ChangeOperationMode::Service>,
     change_to_auto: Client<ChangeOperationMode::Service>,
+    delta: f64,
 ) -> Result<(), Error> {
     let subscriber = session.declare_subscriber("rsu/task_assign").res().await?;
     let publisher = session.declare_publisher("task_request").res().await?;
     let mut clock: Clock = Clock::create(ClockType::RosTime)?;
+
+    let mut ctx = r2r::Context::create()?;
+    let mut node = r2r::Node::create(ctx.clone(), "listen", "")?;
+    let mut listen_state = node.subscribe::<geometry_msgs::msg::PoseWithCovariance>("/sensing/gnss/pose_with_covariance", QosProfile::default()).unwrap();
+
     loop {
         let task: Task = {
             let sample = subscriber.recv_async().await?;
@@ -289,10 +330,7 @@ async fn listen_task(
         let _res = req.await?;
         eprintln!("{_res:#?}");
 
-        // loop {
-        //     去聽目前的位置與目標位置的比較
-        //     抵達後break
-        // }
+        go_to(&mut listen_state, task.cur_location,delta).await;
 
         // stop car
         let msg = ChangeOperationMode::Request {};
@@ -352,6 +390,8 @@ async fn listen_task(
         //     抵達後break
         // }
 
+        go_to(&mut listen_state, task.des_location,delta).await;
+
         // stop car
         let msg = ChangeOperationMode::Request {};
         let req = change_to_stop.request(&msg)?;
@@ -389,4 +429,23 @@ async fn printer(
             eprintln!("{:#?}", *vehicle_state);
         }
     }
+}
+
+fn distance(src: &Point, dst: &Point) -> f64 {
+    let Point { x: sx, y: sy, z : sz} = *src;
+    let Point { x: tx, y:ty, z: tz } = *dst;
+    ((sx - tx).powi(2) + (sy - ty).powi(2) + (sz - tz).powi(2)).sqrt()
+}
+
+async fn go_to(mut subscriber: impl Stream<Item = PoseWithCovariance> + Unpin, goal: Pose ,delta: f64) {
+    while let Some(msg) = subscriber.next().await {
+        let PoseWithCovariance { pose: Pose { position: cur_pose, .. }, .. } = msg;
+        let pickup_pose = goal.position.clone();
+        let dist = distance(&cur_pose, &pickup_pose);
+
+        if dist <= delta {
+            break;
+        }
+    }
+    
 }
