@@ -26,14 +26,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let publisher = node
         .create_publisher::<r2r::autoware_auto_control_msgs::msg::AckermannControlCommand>(
-            "/control/command/control_cmd",
+            "/canbus_arbiter/control/command/control_cmd",
             QosProfile::default(),
         )
         .unwrap();
 
     let gear_publisher = node
         .create_publisher::<r2r::autoware_auto_vehicle_msgs::msg::GearCommand>(
-            "/control/command/gear_cmd",
+            "/canbus_arbiter/control/command/gear_cmd",
             QosProfile::default(),
         )
         .unwrap();
